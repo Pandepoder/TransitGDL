@@ -1,0 +1,58 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+.python_packages/
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Testing / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Linter caches
+.ruff_cache/
+.mypy_cache/
+
+# IDEs / editors
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Environment variables — usar .env.example como plantilla
+.env
+
+# Logs
+*.log
+
+# Bases de datos runtime — nunca commitear datos reales
+*.sqlite3
+*.db
+data/*.db
+
+# Reportes generados
+ruff-report.txt
+
+# Binary artifacts
+*.pyd
+*.so
+*.dll
+
+# Jupyter
+.ipynb_checkpoints/
+.aider*

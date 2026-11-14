@@ -298,6 +298,14 @@ class ConversationHandler:
             await self._save_session(sender, session)
             return "Describe la incidencia en una sola frase."
 
+        if lower in {"5", "diagnostico", "experto"}:
+            await self._save_session(sender, session)
+            return "Escribe *diagnostico* y la ruta, por ejemplo: *diagnostico 646*"
+
+        if lower.startswith(("diagnostico ", "experto ")):
+            await self._save_session(sender, session)
+            return await self._expert_diagnosis(text.split(" ", 1)[1])
+
         # Ruta sola: "646", "231", "RG_646" (no nombres de parada)
         route_only = self._resolve_route_input(text)
         if route_only and self._message_is_route_only(text):
@@ -354,6 +362,13 @@ class ConversationHandler:
         await self._save_session(sender, session)
         return "No entendí tu mensaje.\n\n" + self._menu()
 
+    async def _expert_diagnosis(self, route_text: str) -> str:
+        route_id = self._resolve_route_input(route_text)
+        diagnostico = await self.engine.diagnose_route(route_id) if route_id else None
+        if diagnostico is None:
+            return "No encontré esa ruta para diagnosticar. Ejemplo: *diagnostico 646*"
+        return diagnostico.to_chat_message()
+
     @staticmethod
     def _looks_like_greeting(text: str) -> bool:
         return any(word in text for word in ["hola", "buenas", "hey", "saludos"])
@@ -376,6 +391,8 @@ class ConversationHandler:
                 "clima",
                 "lluvia",
                 "incidencia",
+                "diagnostico",
+                "experto",
             ]
         ):
             return True
@@ -458,7 +475,8 @@ class ConversationHandler:
             "1 · ETA (¿cuánto falta?)\n"
             "2 · Clima y retrasos\n"
             "3 · Rutas en una parada\n"
-            "4 · Reportar incidencia\n\n"
+            "4 · Reportar incidencia\n"
+            "5 · Diagnóstico experto de una ruta\n\n"
             "*Ejemplos directos*\n"
             "· *646* → luego escribe la parada\n"
             "· *¿Cuánto falta la 646 en CUCEI?*\n"

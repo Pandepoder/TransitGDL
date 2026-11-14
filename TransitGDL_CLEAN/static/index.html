@@ -66,6 +66,14 @@ body{font-family:system-ui,sans-serif;background:#0c1218;color:#dce8f5;overflow:
 .tag.live{background:#1a4a32;color:#5dffb8}
 .tag.sched{background:#2a3040;color:#a8c4e0}
 .tag.learn{background:#3a2a10;color:#ffc266}
+.tag.lvl-critica,.tag.lvl-critico{background:#4a1020;color:#ff8fa3}
+.tag.lvl-alta,.tag.lvl-degradado{background:#3a2a10;color:#ffc266}
+.tag.lvl-normal{background:#1a4a32;color:#5dffb8}
+.tag.lvl-baja{background:#2a3040;color:#a8c4e0}
+.ex-act{margin-top:6px;padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,.08);background:rgba(0,0,0,.25)}
+.ex-act summary,.ex-more summary{cursor:pointer;color:#7ec8ff;font-size:11px;margin-top:4px}
+.ex-act ol,.ex-more ol,.ex-more ul{margin:4px 0 0 18px;color:#9eb4cc;font-size:11px;line-height:1.5}
+.ex-more{margin-top:8px}
 .insight{margin-top:8px;padding:8px;border-radius:8px;background:rgba(94,184,255,.08);border:1px solid rgba(94,184,255,.2)}
 #intro{position:fixed;inset:0;z-index:2000;background:rgba(0,0,0,.75);display:flex;align-items:center;justify-content:center;padding:16px}
 #intro .box{max-width:420px;background:#141c28;border:1px solid rgba(255,255,255,.12);border-radius:16px;padding:20px}
@@ -122,6 +130,7 @@ body.panel-open .chat-panel.open,.body.panel-open .chat-fab{bottom:calc(58px + e
   <div class="panel-tabs" id="panel-tabs">
     <button type="button" class="on" data-ptab="routes">Rutas</button>
     <button type="button" data-ptab="eta">ETA</button>
+    <button type="button" data-ptab="expert">Experto</button>
     <button type="button" data-ptab="tools">Mas</button>
   </div>
   <div class="tab-pane on" id="ptab-routes">
@@ -147,6 +156,25 @@ body.panel-open .chat-panel.open,.body.panel-open .chat-fab{bottom:calc(58px + e
         <button class="btn sm sec" type="button" data-rating="5">+20 min</button>
       </div>
       <p id="fb-msg" class="meta" style="margin-top:6px"></p>
+    </div>
+  </div>
+  <div class="tab-pane" id="ptab-expert">
+    <div class="panel-hd"><span>Sistema experto</span><button class="btn sec sm" type="button" id="btn-kb">Reglas</button></div>
+    <div class="panel-bd" style="flex:1;overflow-y:auto">
+      <p class="meta">Diagnostica la ruta seleccionada con la base de reglas. Cambia clima u hora para probar escenarios.</p>
+      <div style="display:flex;gap:6px;margin-top:6px">
+        <select id="ex-clima" aria-label="Clima del escenario">
+          <option value="">Clima actual</option>
+          <option value="clear">Despejado</option>
+          <option value="cloudy">Nublado</option>
+          <option value="rain">Lluvia</option>
+          <option value="thunderstorm">Tormenta</option>
+          <option value="fog">Niebla</option>
+        </select>
+        <select id="ex-hora" aria-label="Hora del escenario"><option value="">Hora actual</option></select>
+      </div>
+      <button class="btn sm" type="button" id="ex-run" style="width:100%">Diagnosticar ruta</button>
+      <div id="ex-box" style="margin-top:10px"><p class="meta">Elige una ruta y pulsa Diagnosticar.</p></div>
     </div>
   </div>
   <div class="tab-pane" id="ptab-tools">
@@ -175,6 +203,7 @@ body.panel-open .chat-panel.open,.body.panel-open .chat-fab{bottom:calc(58px + e
 <nav class="dock" id="dock">
   <button type="button" class="on" data-dock="map"><span class="ico">🗺</span>Mapa</button>
   <button type="button" data-dock="routes"><span class="ico">🚌</span>Rutas</button>
+  <button type="button" data-dock="expert"><span class="ico">🧠</span>Experto</button>
   <button type="button" data-dock="chat"><span class="ico">💬</span>Asistente</button>
   <button type="button" data-dock="tools"><span class="ico">⚙</span>Más</button>
 </nav>
@@ -189,6 +218,7 @@ body.panel-open .chat-panel.open,.body.panel-open .chat-fab{bottom:calc(58px + e
     <button type="button" data-chat="2">Clima</button>
     <button type="button" data-chat="3">Rutas en parada</button>
     <button type="button" data-chat="cuanto falta la 646 en CUCEI">646 → CUCEI</button>
+    <button type="button" data-chat="diagnostico 646">Diagnóstico 646</button>
   </div>
   <div class="chat-ft">
     <input class="inp" id="chat-input" placeholder="Escribe tu consulta…" autocomplete="off"/>
@@ -487,6 +517,47 @@ document.querySelectorAll("[data-quick-route]").forEach(b=>{
   };
 });
 
+const NIVEL_TXT={critica:"crítica",alta:"alta",normal:"normal",baja:"baja",critico:"crítico",degradado:"degradado"};
+function pct(c){return c==null?"":" · "+Math.round(c*100)+" %";}
+function fmtVal(v){return v===true?"sí":v===false?"no":String(v);}
+function renderDiagnosis(d){
+  const acts=(d.acciones||[]).map(a=>`<div class="ex-act"><b>${esc(a.descripcion)}</b><span class="meta">${pct(a.certeza)}</span>
+    <details><summary>¿Por qué?</summary><ol>${a.porque.map(p=>`<li>${esc(p)}</li>`).join("")}</ol></details></div>`).join("");
+  const fleet=d.vehiculos_recomendados!=null&&d.vehiculos_recomendados!==d.vehiculos_actuales
+    ?`<p class="meta" style="margin-top:6px">Flota: <b>${d.vehiculos_actuales}</b> en ruta → <b>${d.vehiculos_recomendados}</b> recomendadas</p>`:"";
+  const alt=d.rutas_alternas?.length&&d.acciones.some(a=>a.id==="sugerir_ruta_alterna")
+    ?`<p class="meta">Rutas alternas: <b>${esc(d.rutas_alternas.slice(0,5).join(", "))}</b></p>`:"";
+  const facts=Object.entries(d.hechos_iniciales||{}).map(([k,v])=>`<li>${esc(k)} = <b>${esc(fmtVal(v))}</b></li>`).join("");
+  const fired=(d.reglas_disparadas||[]).map(r=>`<li><b>${esc(r.regla)}</b> ${esc(r.nombre)}<br>${esc(r.texto)}</li>`).join("");
+  const scen=Object.keys(d.escenario||{}).length?`<span class="tag learn">Escenario simulado</span>`:"";
+  $("ex-box").innerHTML=`
+    <p><b>Ruta ${esc(d.route_name||d.route_id||"")}</b> ${scen}</p>
+    <p style="margin-top:6px"><span class="tag lvl-${esc(d.nivel_demanda)}">Demanda ${esc(NIVEL_TXT[d.nivel_demanda]||d.nivel_demanda)}${pct(d.certeza_demanda)}</span>
+    <span class="tag lvl-${esc(d.estado_servicio)}">Servicio ${esc(NIVEL_TXT[d.estado_servicio]||d.estado_servicio)}${pct(d.certeza_servicio)}</span></p>
+    ${fleet}${alt}
+    <p class="meta" style="margin-top:8px"><b>${d.acciones.length?"Recomendaciones":"Sin acciones: la ruta opera con normalidad."}</b></p>
+    ${acts}
+    <details class="ex-more"><summary>Hechos de entrada (${Object.keys(d.hechos_iniciales||{}).length})</summary><ul>${facts}</ul></details>
+    <details class="ex-more"><summary>Reglas disparadas (${(d.reglas_disparadas||[]).length}) en ${d.ciclos} ciclos</summary><ol>${fired}</ol></details>`;
+}
+async function runDiagnosis(){
+  const route=selectedRoute||DEMO_ROUTE;
+  $("ex-box").innerHTML="<p class='meta'>Razonando…</p>";
+  let url="/expert/diagnose?route_id="+encodeURIComponent(route);
+  if($("ex-clima").value)url+="&clima="+encodeURIComponent($("ex-clima").value);
+  if($("ex-hora").value)url+="&hora="+encodeURIComponent($("ex-hora").value);
+  try{renderDiagnosis(await getJson(url));}
+  catch(e){$("ex-box").innerHTML=`<p style="color:#ff8fa3">No se pudo diagnosticar: ${esc(e.message)}</p>`;}
+}
+for(let h=0;h<24;h++){const o=document.createElement("option");o.value=h;o.textContent=String(h).padStart(2,"0")+":00";$("ex-hora").appendChild(o);}
+$("ex-run").onclick=runDiagnosis;
+$("btn-kb").onclick=async()=>{
+  try{
+    const kb=await getJson("/expert/rules");
+    $("ex-box").innerHTML=`<p><b>Base de conocimiento</b> · ${kb.total_reglas} reglas</p><ol style="margin:6px 0 0 18px;font-size:11px;line-height:1.5;color:#9eb4cc">${kb.reglas.map(r=>`<li><b>${esc(r.id)}</b> ${esc(r.nombre)} <span class="meta">(prioridad ${r.prioridad}, certeza ${r.certeza})</span><br>${esc(r.texto)}</li>`).join("")}</ol>`;
+  }catch(e){$("ex-box").innerHTML=`<p style="color:#ff8fa3">${esc(e.message)}</p>`;}
+};
+
 $("btn-rain").onclick=async()=>{
   try{await fetch("/demo/weather?condition=rain",{method:"POST"});refreshWeather();banner("Clima simulado: lluvia (+4 min típico)","ok");if(lastRoute&&lastStop)eta(lastRoute,lastStop);}catch(e){banner(e.message,"err");}
 };
@@ -515,7 +586,7 @@ function setPanelOpen(on){
   $("panel").classList.toggle("open",on);
   document.body.classList.toggle("panel-open",on);
 }
-$("btn-menu").onclick=()=>setPanelOpen(!$("panel").classList.contains("open"));function setPanelTab(name){const t=document.getElementById('panel-tabs');if(!t)return;t.querySelectorAll('[data-ptab]').forEach(b=>b.classList.toggle('on',b.dataset.ptab===name));document.querySelectorAll('.tab-pane').forEach(p=>p.classList.toggle('on',p.id==='ptab-'+name));}function setDockTab(name){const d=document.getElementById('dock');if(!d)return;d.querySelectorAll('[data-dock]').forEach(b=>b.classList.toggle('on',b.dataset.dock===name));if(name==='map'){setPanelOpen(false);toggleChat(false);}else if(name==='routes'){setPanelOpen(true);setPanelTab('routes');toggleChat(false);}else if(name==='chat'){setPanelOpen(false);toggleChat(true);}else if(name==='tools'){setPanelOpen(true);setPanelTab('tools');toggleChat(false);}syncChromeHeight();}document.querySelectorAll('#dock [data-dock]').forEach(b=>b.onclick=()=>setDockTab(b.dataset.dock));document.querySelectorAll('#panel-tabs [data-ptab]').forEach(b=>b.onclick=()=>setPanelTab(b.dataset.ptab));
+$("btn-menu").onclick=()=>setPanelOpen(!$("panel").classList.contains("open"));function setPanelTab(name){const t=document.getElementById('panel-tabs');if(!t)return;t.querySelectorAll('[data-ptab]').forEach(b=>b.classList.toggle('on',b.dataset.ptab===name));document.querySelectorAll('.tab-pane').forEach(p=>p.classList.toggle('on',p.id==='ptab-'+name));}function setDockTab(name){const d=document.getElementById('dock');if(!d)return;d.querySelectorAll('[data-dock]').forEach(b=>b.classList.toggle('on',b.dataset.dock===name));if(name==='map'){setPanelOpen(false);toggleChat(false);}else if(name==='routes'){setPanelOpen(true);setPanelTab('routes');toggleChat(false);}else if(name==='chat'){setPanelOpen(false);toggleChat(true);}else if(name==='expert'){setPanelOpen(true);setPanelTab('expert');toggleChat(false);}else if(name==='tools'){setPanelOpen(true);setPanelTab('tools');toggleChat(false);}syncChromeHeight();}document.querySelectorAll('#dock [data-dock]').forEach(b=>b.onclick=()=>setDockTab(b.dataset.dock));document.querySelectorAll('#panel-tabs [data-ptab]').forEach(b=>b.onclick=()=>setPanelTab(b.dataset.ptab));
 
 function formatBotText(t){
   return esc(t).replace(/\*([^*]+)\*/g,"<b>$1</b>").replace(/\n/g,"<br>");
@@ -546,7 +617,7 @@ async function sendChatMessage(text){
     dbgLog("index.html:chat","chat_reply",{len:d.reply?.length},"E");
     const etaMatch=/ruta\s*(\d+|[A-Z][\w-]+)/i.exec(d.reply);
     const stopMatch=/parada\s*\*?([^*\n]+)\*?/i.exec(d.reply);
-    if(/CUCEI|646|55|231|615/i.test(d.reply)&&etaMatch){
+    if(!d.reply.startsWith("*Diagnóstico")&&/CUCEI|646|55|231|615/i.test(d.reply)&&etaMatch){
       const rid=etaMatch[1].match(/^\d+$/)?"RG_"+etaMatch[1]:etaMatch[1];
       if(d.reply.includes("min")||d.reply.includes("falta")){
         setPanelOpen(true);

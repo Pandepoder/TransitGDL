@@ -13,6 +13,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from api.deps import get_bot_handler, get_engine
 from api.routes.demo import router as demo_router
 from api.routes.eta import router as eta_router
+from api.routes.expert import router as expert_router
 from api.routes.feedback import router as feedback_router
 from api.routes.fleet import router as fleet_router
 from api.routes.incidents import router as incidents_router
@@ -158,6 +159,7 @@ app.include_router(demo_router)
 app.include_router(eta_router)
 app.include_router(feedback_router)
 app.include_router(fleet_router)
+app.include_router(expert_router)
 app.include_router(incidents_router)
 app.include_router(routes_router)
 app.include_router(map_router)

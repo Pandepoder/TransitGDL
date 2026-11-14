@@ -9,6 +9,8 @@ from typing import Optional
 from .config import CONFIG, DEFAULT_GTFS_PATH, TransitEngineConfig, is_demo_simulator_enabled
 from .demand_analyzer import DemandAnalyzer
 from .eta_engine import ETAEngine
+from .expert import Diagnostico, SistemaExperto
+from .expert.facts import recolectar_hechos
 from .feedback_store import FeedbackStore, PredictionRecord
 from .gps_cache import GPSCache
 from .gtfs_loader import GTFSLoader
@@ -43,6 +45,7 @@ class TransitEngine:
         self._demand = DemandAnalyzer(self._weather)
         self._gps = GPSCache(self.config.redis_url)
         self._incident_store = IncidentStore(self.config.incidents_db_path)
+        self._expert = SistemaExperto()
         self._simulator = None
         self._initialized = False
 
@@ -279,6 +282,36 @@ class TransitEngine:
         self._assert_initialized()
         snapshot = await self._demand.get_demand_snapshot(route_id, current_vehicles)
         return self._demand.get_fleet_recommendation(snapshot)
+
+    @property
+    def expert(self) -> SistemaExperto:
+        return self._expert
+
+    async def diagnose_route(
+        self,
+        route_id: str,
+        vehicles: Optional[int] = None,
+        overrides: Optional[dict] = None,
+    ) -> Optional[Diagnostico]:
+        """
+        Diagnóstico del sistema experto para una ruta.
+
+        Reúne los hechos actuales de la ruta, aplica `overrides` (escenarios
+        "¿qué pasaría si…?") y ejecuta el motor de inferencia.
+        Devuelve None si la ruta no existe.
+        """
+        self._assert_initialized()
+        route = self._gtfs.find_route(route_id)
+        if route is None:
+            return None
+        hechos, alternas = await recolectar_hechos(self, route, vehicles)
+        hechos.update(overrides or {})
+        return self._expert.diagnosticar(
+            hechos,
+            route_id=route.route_id,
+            route_name=route.display_name,
+            rutas_alternas=alternas,
+        )
 
     def report_incident(
         self,

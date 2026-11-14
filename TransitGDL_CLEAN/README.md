@@ -155,6 +155,36 @@ pytest
 
 ---
 
+## Sistema experto
+
+`core/expert/` contiene un sistema experto basado en reglas que diagnostica la operación de una ruta y recomienda acciones.
+
+| Componente | Archivo | Qué hace |
+|---|---|---|
+| Base de conocimiento | `core/expert/rules.yaml` | 48 reglas SI–ENTONCES con prioridad y factor de certeza. Se editan sin tocar Python. |
+| Base de hechos | `core/expert/facts.py` | Reúne clima, calendario, flota, frecuencia, incidencias y error aprendido de la ruta. |
+| Motor de inferencia | `core/expert/inference.py` | Encadenamiento hacia adelante, resolución de conflictos por prioridad y especificidad, factores de certeza estilo MYCIN. |
+| Explicación | `core/expert/system.py` | Cada acción incluye la cadena de reglas que la justifica. |
+
+Uso:
+
+```bash
+# Diagnóstico de una ruta con los hechos actuales
+curl "http://127.0.0.1:8000/expert/diagnose?route_id=RG_646"
+
+# Escenario "¿qué pasaría si…?"
+curl "http://127.0.0.1:8000/expert/diagnose?route_id=RG_646&clima=thunderstorm&hora=8"
+
+# Ver la base de conocimiento
+curl "http://127.0.0.1:8000/expert/rules"
+```
+
+`POST /expert/infer` recibe hechos arbitrarios (`{"hechos": {"clima": "rain", "hora": 8}}`). En el dashboard está la pestaña **Experto**, y en el asistente el comando `diagnostico 646`.
+
+Para agregar una regla, edita `rules.yaml`; al arrancar se valida que los hechos y acciones que usa estén declarados.
+
+---
+
 ## Development Notes
 
 - Keep business logic isolated inside `core/`

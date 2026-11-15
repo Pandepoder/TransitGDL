@@ -5,7 +5,8 @@ from collections import defaultdict, deque
 
 from fastapi import HTTPException, Request
 
-from core.i18n import get_preferred_locale, translate as t
+from core.i18n import get_preferred_locale
+from core.i18n import translate as t
 
 
 class SlidingWindowRateLimiter:

@@ -120,10 +120,10 @@ body.panel-open .chat-panel.open,.body.panel-open .chat-fab{bottom:calc(58px + e
 </div>
 <div class="demo-bar">
   <span>Rápido</span>
-  <button class="btn sm sec" type="button" data-quick-route="RG_55">55</button>
-  <button class="btn sm sec" type="button" data-quick-route="RG_231">231</button>
-  <button class="btn sm sec" type="button" data-quick-route="RG_646">646</button>
-  <button class="btn sm sec" type="button" data-quick-route="RG_615">615</button>
+  <button class="btn sm sec" type="button" data-quick-route="231">231</button>
+  <button class="btn sm sec" type="button" data-quick-route="55">55</button>
+  <button class="btn sm sec" type="button" data-quick-route="615">615</button>
+  <button class="btn sm sec" type="button" data-quick-route="646">646</button>
 </div>
 </div>
 <div id="map"></div>
@@ -135,7 +135,7 @@ body.panel-open .chat-panel.open,.body.panel-open .chat-fab{bottom:calc(58px + e
     <button type="button" data-ptab="tools">Mas</button>
   </div>
   <div class="tab-pane on" id="ptab-routes">
-    <div class="panel-hd"><span>Lineas CUCEI / Tonala</span><button class="btn sec sm" type="button" id="btn-inject">Bus demo</button></div>
+    <div class="panel-hd"><span>Líneas CUCEI / Tonalá</span><button class="btn sec sm" type="button" id="btn-inject">Bus demo</button></div>
     <div class="panel-bd scroll" id="route-list"></div>
   </div>
   <div class="tab-pane" id="ptab-eta">
@@ -218,8 +218,8 @@ body.panel-open .chat-panel.open,.body.panel-open .chat-fab{bottom:calc(58px + e
     <button type="button" data-chat="1">ETA</button>
     <button type="button" data-chat="2">Clima</button>
     <button type="button" data-chat="3">Rutas en parada</button>
-    <button type="button" data-chat="cuanto falta la 646 en CUCEI">646 → CUCEI</button>
-    <button type="button" data-chat="diagnostico 646">Diagnóstico 646</button>
+    <button type="button" data-chat="cuanto falta la 231 en CUCEI">231 → CUCEI</button>
+    <button type="button" data-chat="diagnostico 231">Diagnóstico 231</button>
   </div>
   <div class="chat-ft">
     <input class="inp" id="chat-input" placeholder="Escribe tu consulta…" autocomplete="off"/>
@@ -229,8 +229,9 @@ body.panel-open .chat-panel.open,.body.panel-open .chat-fab{bottom:calc(58px + e
 <script>
 const $=id=>document.getElementById(id);
 const MAP_CENTER=[20.605,-103.38];
-const DEMO_ROUTE="RG_646", DEMO_STOP="CUCEI";
-const QUICK_STOPS={RG_55:"CUCEI",RG_231:"CUCEI",RG_646:"CUCEI",RG_615:"CUCEI"};
+const DEMO_ROUTE="231", DEMO_STOP="CUCEI";
+const QUICK_STOPS={"231":"CUCEI","55":"CUCEI","615":"CUCEI","646":"Tonalá Centro"};
+const FEATURED=["231","55","615","646"];
 let catalog=[], shapes=[], selectedRoute=null, lastEta=null, lastRoute=null, lastStop=null;
 let userMapControl=false, didInitialFit=false, lastFitRoute=null, showAllLines=false;
 let mapRegion="tonala_cucei";
@@ -295,27 +296,26 @@ async function postJson(url,body){
 function drawLines(shapeList){
   lines.clearLayers();
   shapeList.forEach(sh=>{
-    if(!sh.coordinates||sh.coordinates.length<2)return;
+    const paths=sh.paths?.length?sh.paths:[{coordinates:sh.coordinates,headsign:""}];
     const isSel=selectedRoute===sh.route_id;
     if(selectedRoute&&!showAllLines&&!isSel)return;
-    const latlngs=sh.coordinates.map(c=>[c[1],c[0]]);
     const col=sh.color||"#9AA8B5";
     const opts={lineCap:"round",lineJoin:"round"};
-    if(isSel){
-      L.polyline(latlngs,{...opts,color:"#f0f4f8",weight:10,opacity:0.9})
-        .bindTooltip(`<b>${esc(sh.short_name||"")}</b> ${esc((sh.long_name||"").slice(0,40))}`)
-        .on("click",()=>pickRoute(sh.route_id)).addTo(lines);
-      L.polyline(latlngs,{...opts,color:col,weight:7,opacity:1})
-        .on("click",()=>pickRoute(sh.route_id)).addTo(lines);
-    }else{
-      const op=showAllLines?0.55:0;
-      const w=showAllLines?4:0;
-      if(w>0){
-        L.polyline(latlngs,{...opts,color:col,weight:w,opacity:op})
-          .bindTooltip(`<b>${esc(sh.short_name||"")}</b>`)
+    paths.forEach(path=>{
+      if(!path.coordinates||path.coordinates.length<2)return;
+      const latlngs=path.coordinates.map(c=>[c[1],c[0]]);
+      const tip=`<b>${esc(sh.short_name||"")}</b>${path.headsign?" → "+esc(path.headsign):""}`;
+      const dash=path.approximate?"6 8":null;
+      if(isSel){
+        L.polyline(latlngs,{...opts,color:"#f0f4f8",weight:9,opacity:0.85})
+          .bindTooltip(tip).on("click",()=>pickRoute(sh.route_id)).addTo(lines);
+        L.polyline(latlngs,{...opts,color:col,weight:6,opacity:1,dashArray:dash})
           .on("click",()=>pickRoute(sh.route_id)).addTo(lines);
+      }else{
+        L.polyline(latlngs,{...opts,color:col,weight:showAllLines?4:2.5,opacity:showAllLines?0.6:0.38,dashArray:dash})
+          .bindTooltip(tip).on("click",()=>pickRoute(sh.route_id)).addTo(lines);
       }
-    }
+    });
   });
 }
 
@@ -348,30 +348,28 @@ function isSelectedVehicle(p){return selectedRoute&&p.route_id===selectedRoute;}
 
 function buildRouteMenu(){
   const el=$("route-list");
-  const groups={regional:[],feeder:[],macro:[],sitren:[],metro:[],bus:[]};
-  const labels={regional:"Líneas 55 · 231 · 646 · 615",feeder:"Alimentadoras",macro:"Macrobús",sitren:"SiTren",metro:"Metro",bus:"Otras"};
-  catalog.forEach(r=>(groups[r.layer]||groups.bus).push(r));
-  const priority=["RG_646","RG_55","RG_231","RG_615"];
+  const order=["destacadas","metro","macro","sitren","troncal","complementaria","feeder","bus"];
+  const labels={destacadas:"Líneas 231 · 55 · 615 · 646",metro:"Tren ligero",macro:"Macrobús",sitren:"SiTren",troncal:"Troncales",complementaria:"Complementarias",feeder:"Alimentadoras",bus:"Otras"};
+  const groups=Object.fromEntries(order.map(k=>[k,[]]));
+  catalog.forEach(r=>{
+    const key=FEATURED.includes(r.legacy_number)?"destacadas":(groups[r.layer]?r.layer:"bus");
+    groups[key].push(r);
+  });
+  groups.destacadas.sort((a,b)=>FEATURED.indexOf(a.legacy_number)-FEATURED.indexOf(b.legacy_number));
   let html="";
-  for(const g of ["regional","feeder","macro","sitren","metro","bus"]){
-    let list=groups[g];
+  for(const g of order){
+    const list=groups[g];
     if(!list.length)continue;
-    if(g==="regional"){
-      list=[...list].sort((a,b)=>{
-        const pa=priority.indexOf(a.route_id), pb=priority.indexOf(b.route_id);
-        if(pa>=0||pb>=0)return (pa<0?99:pa)-(pb<0?99:pb);
-        return a.short_name.localeCompare(b.short_name);
-      });
-    }else list.sort((a,b)=>a.short_name.localeCompare(b.short_name));
-    html+=`<p class="meta" style="margin:6px 0 2px">${labels[g]||g.toUpperCase()}</p>`;
+    html+=`<p class="meta" style="margin:6px 0 2px">${labels[g]}</p>`;
     list.forEach(r=>{
-      html+=`<div class="route-row" data-id="${esc(r.route_id)}"><span class="sw" style="background:${esc(r.color)}"></span><span><b>${esc(r.short_name)}</b> <span class="meta">${esc(r.route_id)}</span></span></div>`;
+      const sub=[r.legacy_number?"antes "+r.legacy_number:"",r.branch_name||""].filter(Boolean).join(" · ");
+      html+=`<div class="route-row" data-id="${esc(r.route_id)}"><span class="sw" style="background:${esc(r.color)}"></span><span><b>${esc(r.short_name)}</b> <span class="meta">${esc(sub)}</span></span></div>`;
     });
   }
   el.innerHTML=html||"<p class='meta'>Sin rutas</p>";
   el.querySelectorAll(".route-row").forEach(row=>{row.onclick=()=>pickRoute(row.dataset.id);});
-  $("inc-route").innerHTML="<option value=''>Ruta</option>"+catalog.filter(r=>r.layer!=="bus")
-    .map(r=>`<option value="${esc(r.route_id)}">${esc(r.short_name)} ${esc(r.route_id)}</option>`).join("");
+  $("inc-route").innerHTML="<option value=''>Ruta</option>"+catalog
+    .map(r=>`<option value="${esc(r.route_id)}">${esc(r.label||r.short_name)}</option>`).join("");
 }
 
 function renderEta(d){
@@ -382,7 +380,8 @@ function renderEta(d){
   const conf=Math.round((d.confidence||0.85)*100);
   $("eta-box").innerHTML=`
     <p class="eta-big">${Math.round(d.estimated_minutes)} min</p>
-    <p><b>${esc(d.stop_name)}</b> · ruta ${esc(d.route_number)}</p>
+    <p><b>${esc(d.stop_name)}</b> · ruta ${esc(d.route_label||d.route_number)}${d.headsign?" → "+esc(d.headsign):""}</p>
+    ${d.place_name?`<p class="meta">A ${Math.round((d.walk_meters||0)/10)*10} m de ${esc(d.place_name)}</p>`:""}
     <p style="margin-top:6px"><span class="tag ${src}">${srcLabel}</span>
     <span class="tag sched">Confianza ${conf}% · ${esc(d.reliability_label||"media")}</span>${learn}</p>
     <p class="meta">Clima: ${esc(d.weather_condition||"—")} · base: ${esc(d.basis||"")}</p>
@@ -405,26 +404,28 @@ async function loadInsights(routeId, liveCount){
 }
 
 window.pickRoute=async function(routeId){
-  selectedRoute=routeId; lastRoute=routeId;
-  drawLines(shapes);
-  document.querySelectorAll(".route-row").forEach(r=>r.classList.toggle("on",r.dataset.id===routeId));
   setPanelOpen(true);
   stops.clearLayers();
   try{
     const d=await getJson("/map/routes/"+encodeURIComponent(routeId)+"/detail");
+    selectedRoute=d.route_id; lastRoute=d.route_id;
+    if(!shapes.some(sh=>sh.route_id===d.route_id))shapes.push(d);
+    drawLines(shapes);
+    document.querySelectorAll(".route-row").forEach(r=>r.classList.toggle("on",r.dataset.id===d.route_id));
     (d.stops||[]).forEach(s=>{
-      const sn=esc(s.stop_name).replace(/'/g,"");
-      L.circleMarker([s.lat,s.lon],{radius:6,color:"#fff",weight:2,fillColor:d.color,fillOpacity:.95})
-        .bindPopup(`<b>${esc(s.stop_name)}</b><br><button onclick="eta('${esc(routeId)}','${sn}')">ETA</button>`)
+      L.circleMarker([s.lat,s.lon],{radius:5,color:"#fff",weight:2,fillColor:d.color,fillOpacity:.95})
+        .bindPopup(`<b>${esc(s.stop_name)}</b><br><span class="meta">hacia ${esc(s.headsign||"")}</span><br><button onclick="eta('${esc(d.route_id)}','${esc(s.stop_id)}')">ETA</button>`)
         .addTo(stops);
     });
-    if(d.coordinates?.length&&routeId!==lastFitRoute&&!userMapControl){
-      map.flyToBounds(d.coordinates.map(c=>[c[1],c[0]]),{padding:[80,80],maxZoom:14,duration:0.7});
-      lastFitRoute=routeId;
+    const all=(d.paths||[]).flatMap(path=>path.coordinates||[]);
+    if(all.length&&d.route_id!==lastFitRoute&&!userMapControl){
+      map.flyToBounds(all.map(c=>[c[1],c[0]]),{padding:[80,80],maxZoom:14,duration:0.7});
+      lastFitRoute=d.route_id;
     }
     const inc=d.active_incidents?.length?`<p style="color:#e88a5a;margin-top:4px">⚠ Incidencia activa (+~2 min)</p>`:"";
-    $("eta-box").innerHTML=`<p><b>${esc(d.short_name)}</b> · ${d.live_count} vehículos${inc}</p><p class="meta">Toca una parada en el mapa.</p>`;
-    await loadInsights(routeId, d.live_count);
+    const dirs=(d.paths||[]).map(path=>esc(path.headsign)).join(" · ");
+    $("eta-box").innerHTML=`<p><b>${esc(d.label||d.short_name)}</b> · ${d.live_count} vehículos${inc}</p><p class="meta">${dirs}</p><p class="meta">Toca una parada en el mapa.</p>`;
+    await loadInsights(d.route_id, d.live_count);
   }catch(e){$("eta-box").innerHTML=`<p style="color:#ff8fa3">${esc(e.message)}</p>`;}
 };
 
@@ -434,9 +435,9 @@ window.eta=async function(route,stop){
   try{
     const d=await getJson("/eta/?route="+encodeURIComponent(route)+"&stop="+encodeURIComponent(stop));
     renderEta(d);
-    if(selectedRoute!==route){selectedRoute=route;drawLines(shapes);}
+    if(d.route_id&&selectedRoute!==d.route_id){selectedRoute=d.route_id;drawLines(shapes);}
   }catch{
-    $("eta-box").innerHTML="<p style='color:#ff8fa3'>Parada no encontrada. Prueba buscar abajo.</p>";
+    $("eta-box").innerHTML="<p style='color:#ff8fa3'>Esa ruta no pasa por esa parada. Prueba buscar abajo.</p>";
   }
 };
 
@@ -475,7 +476,7 @@ async function runScenario(name){
   if(name==="eta"){
     await pickRoute(DEMO_ROUTE);
     await eta(DEMO_ROUTE, DEMO_STOP);
-    banner("Escenario: Ruta 646 → parada CUCEI","ok");
+    banner("Escenario: Ruta 231 → CUCEI","ok");
   }else if(name==="incident"){
     await pickRoute(DEMO_ROUTE);
     $("inc-route").value=DEMO_ROUTE;
@@ -505,7 +506,7 @@ document.querySelectorAll("[data-quick-route]").forEach(b=>{
     await pickRoute(rid);
     const stop=QUICK_STOPS[rid]||"CUCEI";
     await eta(rid, stop);
-    banner("Ruta "+rid.replace("RG_","")+" → "+stop,"ok");
+    banner("Ruta "+rid+" → "+stop,"ok");
   };
 });
 
@@ -606,16 +607,12 @@ async function sendChatMessage(text){
     chatSession=d.session_id||chatSession;
     localStorage.setItem("tgdl_chat_session",chatSession);
     appendChatMsg(d.reply,"bot");
-    const etaMatch=/ruta\s*(\d+|[A-Z][\w-]+)/i.exec(d.reply);
-    const stopMatch=/parada\s*\*?([^*\n]+)\*?/i.exec(d.reply);
-    if(!d.reply.startsWith("*Diagnóstico")&&/CUCEI|646|55|231|615/i.test(d.reply)&&etaMatch){
-      const rid=etaMatch[1].match(/^\d+$/)?"RG_"+etaMatch[1]:etaMatch[1];
-      if(d.reply.includes("min")||d.reply.includes("falta")){
-        setPanelOpen(true);
-        await pickRoute(rid.startsWith("RG_")?rid:"RG_"+rid.replace(/\D/g,""));
-        const stop=stopMatch?stopMatch[1].trim():(QUICK_STOPS[rid]||"CUCEI");
-        await eta(rid, stop);
-      }
+    const etaMatch=/\*Ruta\s+([\w-]+)/.exec(d.reply);
+    const stopMatch=/ en \*([^*\n]+)\*/.exec(d.reply);
+    if(etaMatch&&stopMatch&&/Llegada estimada|Próxima salida/.test(d.reply)){
+      setPanelOpen(true);
+      await pickRoute(etaMatch[1]);
+      await eta(etaMatch[1], stopMatch[1].trim());
     }
   }catch(e){
     appendChatMsg("No pude conectar con el asistente. ¿Está corriendo start.bat?","bot");
@@ -709,7 +706,7 @@ async function loadMap(){
     if(posTimer)clearInterval(posTimer);
     posTimer=setInterval(refreshPositions,4000);
     syncChromeHeight();
-    appendChatMsg("Hola. Soy el mismo asistente que WhatsApp. Prueba «cuanto falta la 646 en CUCEI» o el menú 1-4.","bot");
+    appendChatMsg("Hola. Soy el mismo asistente que WhatsApp. Prueba «cuanto falta la 231 en CUCEI» o el menú 1-4.","bot");
   }catch(e){
     console.error(e);
     banner("Abre http://127.0.0.1:8000/ con start.bat (no el archivo HTML directo)","err");

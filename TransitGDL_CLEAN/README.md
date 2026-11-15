@@ -123,9 +123,31 @@ Docs API: [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
 Prueba rápida:
 
 ```bash
-curl "http://127.0.0.1:8000/eta/?route=RG_646&stop=CUCEI"
-curl "http://127.0.0.1:8000/eta/?route=MACRO01_R&stop=Artes%20Pl%C3%A1sticas"
+curl "http://127.0.0.1:8000/eta/?route=231&stop=CUCEI"
+curl "http://127.0.0.1:8000/eta/?route=MC-L1&stop=Artes%20Pl%C3%A1sticas"
 ```
+
+Las rutas aceptan la clave oficial (`T15`) o el número anterior (`231`); la parada puede ser un nombre de parada o un lugar conocido (`CUCEI`, `Minerva`, `Tonalá Centro`).
+
+---
+
+## Datos
+
+La app usa el GTFS oficial del Área Metropolitana de Guadalajara publicado por el Gobierno de Jalisco (247 rutas con servicio: Mi Transporte, Mi Macro, Mi Tren y SiTren). El archivo `data/gtfs_amg.zip` viene en el repositorio.
+
+```bash
+# Volver a descargarlo (verifica la huella SHA-256)
+python scripts/download_gtfs.py
+
+# Reconstruir la base de transporte y ver el reporte de validación
+python scripts/build_transit_db.py
+```
+
+Al arrancar, la app convierte el zip en `data/transit.db` (SQLite) si esa base falta o si el zip cambió. Ahí quedan las rutas con sus dos sentidos, la distancia de cada parada sobre el trazo, las frecuencias por tipo de día y los alias de números antiguos. El feed trae trazos invertidos o que no pasan por sus paradas; el constructor los corrige y lo reporta.
+
+`data/landmarks.json` contiene 44 puntos de interés con coordenadas de OpenStreetMap (se regenera con `python scripts/build_landmarks.py`).
+
+El feed vigente más reciente es de 2024. Su calendario ya venció, así que se usa como patrón semanal y los días festivos operan con horario de domingo.
 
 ---
 
@@ -147,9 +169,9 @@ pytest
 
 ## Example Workflow
 
-1. Ensure `data/gtfs_guadalajara.zip` exists (included in the repo, or run `python scripts/seed_demo.py` for a minimal demo feed).
+1. Ensure `data/gtfs_amg.zip` exists (included in the repo, or run `python scripts/download_gtfs.py`).
 2. Start the API service (`uvicorn api.main:app --reload` or `.\run.ps1`).
-3. Open the dashboard and pick a demo scenario, or query `/eta/?route=MACRO01_R&stop=Artes%20Plásticas`.
+3. Open the dashboard and pick a demo scenario, or query `/eta/?route=231&stop=CUCEI`.
 4. Submit feedback via `/feedback/` using the `prediction_id` from an ETA response.
 5. Observe adaptive prediction updates in later ETA calls.
 
@@ -170,16 +192,16 @@ Uso:
 
 ```bash
 # Diagnóstico de una ruta con los hechos actuales
-curl "http://127.0.0.1:8000/expert/diagnose?route_id=RG_646"
+curl "http://127.0.0.1:8000/expert/diagnose?route_id=231"
 
 # Escenario "¿qué pasaría si…?"
-curl "http://127.0.0.1:8000/expert/diagnose?route_id=RG_646&clima=thunderstorm&hora=8"
+curl "http://127.0.0.1:8000/expert/diagnose?route_id=231&clima=thunderstorm&hora=8"
 
 # Ver la base de conocimiento
 curl "http://127.0.0.1:8000/expert/rules"
 ```
 
-`POST /expert/infer` recibe hechos arbitrarios (`{"hechos": {"clima": "rain", "hora": 8}}`). En el dashboard está la pestaña **Experto**, y en el asistente el comando `diagnostico 646`.
+`POST /expert/infer` recibe hechos arbitrarios (`{"hechos": {"clima": "rain", "hora": 8}}`). En el dashboard está la pestaña **Experto**, y en el asistente el comando `diagnostico 231`.
 
 Para agregar una regla, edita `rules.yaml`; al arrancar se valida que los hechos y acciones que usa estén declarados.
 

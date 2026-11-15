@@ -10,7 +10,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from ..calendar_utils import es_festivo
-from ..models import IncidentSeverity, Route, haversine_km
+from ..models import IncidentSeverity, Route
 from ..prediction_learner import MIN_SAMPLES_TO_APPLY, _day_type, _hour_bucket
 from ..timezone_utils import GDL_TZ
 
@@ -25,10 +25,7 @@ _ORDEN_SEVERIDAD = [
     IncidentSeverity.HIGH,
     IncidentSeverity.CRITICAL,
 ]
-_MAX_PARADAS_ALTERNAS = 60
 _RADIO_ALTERNA_KM = 0.3
-_RADIO_ALTERNA_GRADOS = 0.004  # prefiltro rápido (~440 m) antes de haversine
-_cache_alternas: dict[tuple[int, str], list[str]] = {}
 
 
 async def recolectar_hechos(
@@ -91,32 +88,11 @@ def _frecuencia(engine: "TransitEngine", route: Route, ahora: datetime) -> float
 
 def _rutas_alternas(engine: "TransitEngine", route: Route) -> list[str]:
     """Otras rutas con paradas a menos de 300 m de alguna parada de esta."""
-    gtfs = engine._gtfs
-    clave = (id(gtfs), route.route_id)
-    if clave in _cache_alternas:
-        return _cache_alternas[clave]
     try:
-        paradas = gtfs.get_stops_for_route(route.route_id)[:_MAX_PARADAS_ALTERNAS]
-        todas = gtfs.get_stops()
-    except Exception:  # pragma: no cover
+        vecinas = engine._gtfs.routes_near_route(route.route_id, _RADIO_ALTERNA_KM)
+    except Exception:  # pragma: no cover - base incompleta
         return []
-
-    nombres: dict[str, str] = {}
-    for parada in paradas:
-        for cercana in todas:
-            if (
-                abs(cercana.lat - parada.lat) > _RADIO_ALTERNA_GRADOS
-                or abs(cercana.lon - parada.lon) > _RADIO_ALTERNA_GRADOS
-                or haversine_km(parada.lat, parada.lon, cercana.lat, cercana.lon)
-                > _RADIO_ALTERNA_KM
-            ):
-                continue
-            for otra in gtfs.get_routes_at_stop(cercana.stop_id):
-                if otra.route_id != route.route_id:
-                    nombres.setdefault(otra.route_id, otra.display_name)
-    resultado = sorted(nombres.values(), key=lambda n: (len(n), n))
-    _cache_alternas[clave] = resultado
-    return resultado
+    return [vecina.label for vecina in vecinas]
 
 
 def _aprendizaje(

@@ -54,10 +54,24 @@ class Route(FlexibleModel):
     route_long_name: str = ""
     route_type: int = 3
     agency_id: Optional[str] = None
+    # Datos derivados al construir la base de transporte.
+    mode: str = "bus"  # tren | brt | bus | trolebus
+    group: str = "bus"  # tren | macro | sitren | troncal | complementaria | ...
+    legacy_number: Optional[str] = None  # número antiguo de la ruta (p. ej. 646)
+    branch_name: str = ""  # nombre del ramal (p. ej. "Rio Nilo - Guadalupe")
+    color: Optional[str] = None  # color para mostrar, #RRGGBB
+    has_frequency: bool = True
 
     @property
     def display_name(self) -> str:
         return self.route_short_name or self.route_id
+
+    @property
+    def label(self) -> str:
+        """Clave oficial con el número antiguo, p. ej. "T15 (antes 231)"."""
+        if self.legacy_number and self.legacy_number != self.route_short_name:
+            return f"{self.display_name} (antes {self.legacy_number})"
+        return self.display_name
 
 
 class Stop(FlexibleModel):
@@ -93,6 +107,11 @@ class BusPosition(FlexibleModel):
     lon: float
     speed_kmh: float = 0.0
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    # Datos opcionales que enriquecen la posición (los publica el simulador;
+    # un GPS real puede omitirlos y el motor los deduce).
+    pattern_id: Optional[str] = None  # patrón (ruta y sentido) que recorre
+    bearing: Optional[float] = None  # rumbo en grados, 0 = norte
+    progress_m: Optional[float] = None  # metros recorridos sobre el trazo
 
     @field_validator("timestamp", mode="before")
     @classmethod
@@ -172,6 +191,15 @@ class ETAResult(FlexibleModel):
     learned_correction_minutes: float = 0.0
     # Condición climática en el momento de la predicción (para PredictionRecord)
     weather_condition: str = "unknown"
+    # Sentido del viaje: destino que anuncia la unidad y patrón de la base.
+    headsign: Optional[str] = None
+    direction_id: Optional[int] = None
+    pattern_id: Optional[str] = None
+    # Clave con el número antiguo, p. ej. "T15 (antes 231)".
+    route_label: Optional[str] = None
+    # Si la parada se eligió por un lugar ("CUCEI"): nombre y distancia a pie.
+    place_name: Optional[str] = None
+    walk_meters: Optional[float] = None
 
     def to_whatsapp_message(self) -> str:
         minutes = max(0, round(self.estimated_minutes))
@@ -181,8 +209,15 @@ class ETAResult(FlexibleModel):
         if self.service_day_offset > 0:
             eta_label = f"Próxima salida: *mañana en {self._format_eta(minutes)}*"
 
+        header = f"*Ruta {self.route_label or self.route_number}*"
+        if self.headsign:
+            header += f" hacia *{self.headsign}*"
+        header += f" en *{self.stop_name}*"
+        if self.place_name and self.walk_meters is not None:
+            header += f" (a {round(self.walk_meters / 10) * 10} m de {self.place_name})"
+
         lines = [
-            f"*Ruta {self.route_number}* en *{self.stop_name}*",
+            header,
             eta_label,
             f"Base: {source_label} | Confianza: {self.reliability_label} ({confidence_pct}%)",
         ]

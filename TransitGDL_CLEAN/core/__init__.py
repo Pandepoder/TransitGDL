@@ -6,14 +6,18 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from .config import CONFIG, DEFAULT_GTFS_PATH, TransitEngineConfig, is_demo_simulator_enabled
+from .config import (
+    CONFIG,
+    DEFAULT_GTFS_PATH,
+    TransitEngineConfig,
+    is_demo_simulator_enabled,
+)
 from .demand_analyzer import DemandAnalyzer
 from .eta_engine import ETAEngine
 from .expert import Diagnostico, SistemaExperto
 from .expert.facts import recolectar_hechos
 from .feedback_store import FeedbackStore, PredictionRecord
 from .gps_cache import GPSCache
-from .gtfs_loader import GTFSLoader
 from .incident_store import IncidentStore
 from .models import (
     AlternateRoute,
@@ -27,6 +31,7 @@ from .models import (
 )
 from .prediction_learner import PredictionLearner
 from .timezone_utils import GDL_TZ
+from .transit import TransitStore
 from .weather_client import WeatherClient
 
 logger = logging.getLogger(__name__)
@@ -37,7 +42,11 @@ __all__ = ["TransitEngine"]
 class TransitEngine:
     def __init__(self, config: Optional[TransitEngineConfig] = None):
         self.config = config or CONFIG
-        self._gtfs = GTFSLoader(self.config.gtfs_path)
+        self._gtfs = TransitStore(
+            self.config.gtfs_path,
+            self.config.transit_db_path,
+            self.config.landmarks_path,
+        )
         self._weather = WeatherClient()
         self._feedback_store = FeedbackStore(self.config.feedback_db_path)
         self._learner = PredictionLearner(self._feedback_store)
@@ -66,9 +75,6 @@ class TransitEngine:
         self._incident_store.initialize()
         self._feedback_store.initialize()
         self._gtfs.load()
-        from .regional_overlay import apply_regional_overlay
-
-        apply_regional_overlay(self._gtfs)
         self._eta.gtfs = self._gtfs
         self._eta.learner = self._learner
         await self._gps.connect()
@@ -82,7 +88,9 @@ class TransitEngine:
         if self._simulator is not None:
             return True
         if not is_demo_simulator_enabled():
-            logger.info("FleetSimulator: desactivado (DEMO_SIMULATOR=false o production).")
+            logger.info(
+                "FleetSimulator: desactivado (DEMO_SIMULATOR=false o production)."
+            )
             return False
         if not self._initialized:
             return False
@@ -101,6 +109,9 @@ class TransitEngine:
             await self._simulator.stop()
             self._simulator = None
         await self._gps.close()
+        close_store = getattr(self._gtfs, "close", None)
+        if callable(close_store):
+            close_store()
 
     @property
     def cache_backend(self) -> str:
@@ -326,14 +337,18 @@ class TransitEngine:
 
             incident = Incident(
                 description=incident,
-                affected_routes=affected_routes or [],
+                affected_routes=self._canonical_route_ids(affected_routes or []),
                 severity=(
                     IncidentSeverity(severity) if severity else IncidentSeverity.MEDIUM
                 ),
                 stop_ids=stop_ids or [],
             )
-        elif stop_ids is not None:
-            incident.stop_ids = stop_ids
+        else:
+            incident.affected_routes = self._canonical_route_ids(
+                incident.affected_routes
+            )
+            if stop_ids is not None:
+                incident.stop_ids = stop_ids
 
         saved = self._incident_store.add_incident(incident)
         logger.info("Incidencia registrada: %s", saved.description)
@@ -348,6 +363,8 @@ class TransitEngine:
         limit: int = 50,
     ) -> list[Incident]:
         self._assert_initialized()
+        if route_id:
+            route_id = self._canonical_route_ids([route_id])[0]
         return self._incident_store.list_incidents(
             active_only=active_only,
             route_id=route_id,
@@ -366,7 +383,25 @@ class TransitEngine:
         self._assert_initialized()
         return self._incident_store.resolve_incident(incident_id)
 
+    def _canonical_route_ids(self, route_ids: list[str]) -> list[str]:
+        """
+        Convierte números antiguos y alias a claves oficiales. Un número con
+        varios ramales (646) se expande a todos; lo desconocido se conserva.
+        """
+        canonical: list[str] = []
+        finder = getattr(self._gtfs, "find_routes", None)
+        for raw in route_ids:
+            try:
+                found = [route.route_id for route in finder(raw)] if finder else []
+            except TypeError:
+                found = []
+            for route_id in found or [raw]:
+                if route_id not in canonical:
+                    canonical.append(route_id)
+        return canonical
+
     def get_alternate_routes(self, route_id: str) -> list[AlternateRoute]:
+        """Rutas que comparten paradas con una ruta que tiene incidencias activas."""
         self._assert_initialized()
         active = self.get_active_incidents(route_id=route_id)
         if not active:
@@ -376,19 +411,17 @@ class TransitEngine:
         if route is None:
             return []
 
-        alternatives = [
-            candidate
-            for candidate in self._gtfs.get_routes()
-            if candidate.route_id != route.route_id
-            and candidate.route_type == route.route_type
-        ]
-        if not alternatives:
+        neighbors = self._gtfs.routes_near_route(route.route_id)
+        if not neighbors:
             return []
 
+        names = ", ".join(neighbor.label for neighbor in neighbors[:4])
         return [
             AlternateRoute(
                 original_route_id=route.route_id,
-                alternate_description=f"Considera {alternatives[0].display_name} como alternativa cercana.",
+                alternate_description=(
+                    f"Rutas que comparten paradas con la {route.label}: {names}."
+                ),
                 extra_time_minutes=10.0,
                 affected_stops=[],
                 reason=active[0].description,
@@ -430,61 +463,24 @@ class TransitEngine:
         return self._gtfs.get_active_headway(route_id)
 
     def describe_routes_at_stop(self, stop_query: str) -> str:
+        """Rutas que pasan por una parada o cerca de un lugar conocido."""
         self._assert_initialized()
-        from .regional_overlay import CURRENT_OVERLAY_IDS
-
-        normalized = stop_query.strip().lower()
-        matches = self.search_stops_with_routes(stop_query, limit=15)
-        if not matches:
+        place = self._gtfs.resolve_place(stop_query)
+        if place is None:
             return "No encontré esa parada."
+        routes = self._gtfs.routes_at_place(place)
+        if not routes:
+            return f"No encontré rutas activas para *{place.name}*."
 
-        relevant = [
-            m
-            for m in matches
-            if normalized in m.stop_name.lower()
-            or m.stop_name.lower() in normalized
-        ]
-        if not relevant:
-            relevant = [self._pick_stop_match(matches, stop_query)]
-
-        short_names: set[str] = set()
-        display_name = relevant[0].stop_name
-        for match in relevant:
-            for route_id, short_name in zip(match.route_ids, match.route_numbers):
-                if route_id in CURRENT_OVERLAY_IDS:
-                    short_names.add(short_name)
-            if "cucei" in match.stop_name.lower():
-                display_name = "CUCEI"
-
-        if not short_names:
-            stop = self._pick_stop_match(matches, stop_query)
-            routes = self._gtfs.get_routes_at_stop(stop.stop_id)
-            regional = [r for r in routes if r.route_id in CURRENT_OVERLAY_IDS]
-            if regional:
-                routes = regional
-            if not routes:
-                return f"No encontré rutas activas para *{stop.stop_name}*."
-            short_names = {r.route_short_name for r in routes}
-            display_name = stop.stop_name
-
-        route_names = ", ".join(
-            sorted(short_names, key=lambda n: (len(n), n))
+        shown = [route.label for route in routes[:14]]
+        extra = len(routes) - len(shown)
+        listing = ", ".join(shown) + (f" y {extra} más" if extra > 0 else "")
+        where = (
+            f"Cerca de *{place.name}*"
+            if place.kind == "lugar"
+            else f"En *{place.name}*"
         )
-        return f"En *{display_name}* pasan: {route_names}"
-
-    @staticmethod
-    def _pick_stop_match(matches: list[StopMatch], query: str):
-        """Prioriza paradas del overlay regional (RG_*) sobre homónimos del GTFS."""
-        normalized = query.strip().lower()
-
-        def score(match: StopMatch) -> tuple[int, int, int]:
-            overlay = 1 if match.stop_id.startswith(("R55_", "R231_", "R646_", "R615_")) else 0
-            exact = 1 if match.stop_name.lower() == normalized else 0
-            partial = 1 if normalized in match.stop_name.lower() else 0
-            rg_routes = sum(1 for rid in match.route_ids if rid.startswith("RG_"))
-            return (overlay, exact, partial, rg_routes, -len(match.stop_name))
-
-        return sorted(matches, key=score, reverse=True)[0]
+        return f"{where} pasan: {listing}"
 
     async def _handle_weather_query(self) -> str:
         condition = await self._weather.get_current_condition()
@@ -501,19 +497,25 @@ class TransitEngine:
         stop = None
 
         route_patterns = [
-            r"(?:ruta|línea|linea|camión|camion|bus)\s*(\d+\w*)",
-            r"\bla\s+(\d+\w*)\b",
-            r"^(\d+\w*)\b",
+            r"(?:ruta|línea|linea|camión|camion|bus|tren)\s+([\w-]*\d[\w-]*)",
+            r"\bla\s+([\w-]*\d[\w-]*)\b",
+            r"^([\w-]*\d[\w-]*)\b",
         ]
         for pattern in route_patterns:
             match = re.search(pattern, query, re.IGNORECASE)
             if match:
                 route = match.group(1)
                 break
+        if route is None or self._gtfs.find_route(route) is None:
+            # Cualquier palabra con dígitos que sea una ruta conocida (T15, C38-V1, 646).
+            for token in re.findall(r"[\w-]*\d[\w-]*", query):
+                if self._gtfs.find_route(token) is not None:
+                    route = token
+                    break
 
         stop_patterns = [
-            r"(?:en|parada|hasta|para en)\s+(.+?)(?:\?|$)",
-            r"(?:por)\s+(.+?)(?:\?|$)",
+            r"\b(?:en|parada|hasta|para en)\s+(.+?)(?:\?|$)",
+            r"\b(?:por)\s+(.+?)(?:\?|$)",
         ]
         for pattern in stop_patterns:
             match = re.search(pattern, query, re.IGNORECASE)
@@ -525,7 +527,7 @@ class TransitEngine:
 
     @staticmethod
     def _parse_stop_only(query: str) -> Optional[str]:
-        match = re.search(r"(?:por|en|parada)\s+(.+?)(?:\?|$)", query, re.IGNORECASE)
+        match = re.search(r"\b(?:por|en|parada)\s+(.+?)(?:\?|$)", query, re.IGNORECASE)
         if match:
             return match.group(1).strip().rstrip("?. ")
         return None
@@ -545,7 +547,8 @@ class TransitEngine:
             raise FileNotFoundError(f"No existe GTFS configurado: {gtfs_path}")
 
         logger.warning(
-            "No se encontro %s. Generando GTFS de demostracion para facilitar el arranque local.",
+            "No se encontró %s. Se genera un GTFS de demostración mínimo; para los "
+            "datos reales ejecuta: python scripts/download_gtfs.py",
             gtfs_path,
         )
         from scripts.seed_demo import build_gtfs_zip

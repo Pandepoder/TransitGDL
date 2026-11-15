@@ -1,85 +1,97 @@
+"""
+Descarga el GTFS oficial del Área Metropolitana de Guadalajara.
+
+Fuente: feed publicado por el Gobierno de Jalisco (Setran / SITEUR) en su
+portal de datos abiertos, servido desde el espejo estable de Mobility Database
+(registro mdb-2366). Se verifica la huella SHA-256 para garantizar que el
+archivo es exactamente la versión contra la que se probó el proyecto.
+
+Uso:
+    python scripts/download_gtfs.py
+    python scripts/download_gtfs.py --accept-new   # adoptar un feed más nuevo
+"""
+
 from __future__ import annotations
 
 import argparse
-import html.parser
-import urllib.parse
+import hashlib
 import urllib.request
+import zipfile
 from pathlib import Path
 
-
-DEFAULT_SOURCE = "https://hub.tumidata.org/dataset/?tags=City+of+Guadalajara"
-
-
-class _LinkExtractor(html.parser.HTMLParser):
-    def __init__(self):
-        super().__init__()
-        self.links: list[str] = []
-
-    def handle_starttag(self, tag, attrs):
-        if tag.lower() != "a":
-            return
-        href = dict(attrs).get("href")
-        if href:
-            self.links.append(href)
+DEFAULT_URL = "https://files.mobilitydatabase.org/mdb-2366/latest.zip"
+DEFAULT_OUTPUT = "data/gtfs_amg.zip"
+# Versión del 24-feb-2025 (datos de marzo de 2024, 276 rutas).
+KNOWN_SHA256 = "22011e158efdf066057ed882d2c00d205cfaa390c51d01f565619c0049c15e99"
+REQUIRED_FILES = {"routes.txt", "stops.txt", "trips.txt", "stop_times.txt"}
+USER_AGENT = "gtfs-downloader/1.0"
 
 
-def _fetch(url: str) -> bytes:
-    with urllib.request.urlopen(url, timeout=30) as resp:
-        return resp.read()
+def sha256_of(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1 << 20), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
-def _resolve_download_url(source_url: str) -> str:
-    parsed = urllib.parse.urlparse(source_url)
-    if parsed.path.lower().endswith(".zip"):
-        return source_url
-
-    html = _fetch(source_url).decode("utf-8", errors="ignore")
-    extractor = _LinkExtractor()
-    extractor.feed(html)
-
-    candidates = []
-    for link in extractor.links:
-        href = urllib.parse.urljoin(source_url, link)
-        low = href.lower()
-        if ".zip" in low or "download" in low or "gtfs" in low:
-            candidates.append(href)
-
-    if not candidates:
-        raise RuntimeError(
-            "No pude encontrar un enlace directo de descarga en la página. "
-            "Pasa el URL directo del ZIP con --url."
-        )
-
-    # Preferir ZIP / GTFS
-    candidates.sort(key=lambda u: (".zip" not in u.lower(), "gtfs" not in u.lower(), len(u)))
-    return candidates[0]
+def download(url: str, output: Path, *, timeout: float = 120.0) -> Path:
+    output.parent.mkdir(parents=True, exist_ok=True)
+    partial = output.with_suffix(output.suffix + ".part")
+    request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        with partial.open("wb") as handle:
+            for chunk in iter(lambda: response.read(1 << 16), b""):
+                handle.write(chunk)
+    return partial
 
 
-def download_gtfs(source_url: str, output_path: Path) -> Path:
-    download_url = _resolve_download_url(source_url)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-
-    with urllib.request.urlopen(download_url, timeout=60) as resp, output_path.open("wb") as out:
-        out.write(resp.read())
-
-    return output_path
+def validate_zip(path: Path) -> None:
+    with zipfile.ZipFile(path) as archive:
+        names = set(archive.namelist())
+    missing = REQUIRED_FILES - names
+    if missing:
+        raise ValueError(f"El zip no es un GTFS válido; faltan: {sorted(missing)}")
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Descarga un GTFS de Guadalajara.")
-    parser.add_argument("--url", default=DEFAULT_SOURCE, help="URL de la página o del ZIP GTFS")
-    parser.add_argument("--output", default="data/gtfs_guadalajara.zip", help="Ruta de salida")
+    parser = argparse.ArgumentParser(description="Descarga el GTFS oficial del AMG.")
+    parser.add_argument("--url", default=DEFAULT_URL, help="URL del zip GTFS")
+    parser.add_argument("--output", default=DEFAULT_OUTPUT, help="Ruta de salida")
+    parser.add_argument(
+        "--accept-new",
+        action="store_true",
+        help="Aceptar un archivo cuya huella no coincide con la versión conocida",
+    )
     args = parser.parse_args(argv)
-
     output = Path(args.output)
+
     try:
-        path = download_gtfs(args.url, output)
-        print(f"✓ GTFS descargado en {path}")
-        return 0
+        partial = download(args.url, output)
+        validate_zip(partial)
     except Exception as exc:
-        print(f"⚠ No se pudo descargar el GTFS automáticamente: {exc}")
-        print("Puedes usar el GTFS demo con: python scripts/seed_demo.py")
+        print(f"No se pudo descargar el GTFS: {exc}")
+        print(
+            "Como alternativa, genera datos de demostración: python scripts/seed_demo.py"
+        )
         return 1
+
+    digest = sha256_of(partial)
+    if digest != KNOWN_SHA256 and not args.accept_new:
+        print("La huella del archivo no coincide con la versión conocida.")
+        print(f"  esperada: {KNOWN_SHA256}")
+        print(f"  obtenida: {digest}")
+        print(
+            "Puede ser un feed más reciente. Revísalo y vuelve a correr con --accept-new."
+        )
+        print(f"El archivo quedó en {partial} sin activar.")
+        return 2
+
+    partial.replace(output)
+    size_mb = output.stat().st_size / 1e6
+    print(f"GTFS guardado en {output} ({size_mb:.2f} MB, sha256 {digest[:12]}…)")
+    print("Siguiente paso: python scripts/build_transit_db.py")
+    return 0
 
 
 if __name__ == "__main__":

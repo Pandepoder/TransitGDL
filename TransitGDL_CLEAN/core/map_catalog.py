@@ -1,126 +1,171 @@
+"""Catálogo de rutas, trazos y paradas que consume el mapa."""
+
 from __future__ import annotations
 
 from typing import Any
 
-from .gtfs_loader import GTFSLoader
-from .models import Route, Stop, haversine_km
+from .models import Route
+from .transit import TransitStore
 
-METRO_TRAIN_IDS = frozenset({"MT_L1", "MT_L2", "MT_L3"})
-METRO_TRAM_IDS = frozenset({"ST_L1", "ST_L1B", "ST_L2", "ST_L3", "ST_L4"})
-MACRO_IDS = frozenset({"MACRO01_R", "MACRO02_E"})
-
-# Paleta apagada y distinguible (evita neones que se mezclan en el mapa).
-ROUTE_COLORS: dict[str, str] = {
-    "MACRO01_R": "#6BA3C7",
-    "MACRO02_E": "#7A9BB5",
-    "MT_L1": "#A898C9",
-    "MT_L2": "#B5A8D4",
-    "MT_L3": "#D4A088",
-    "ST_L1": "#6DB5A8",
-    "ST_L1B": "#7DBFB3",
-    "ST_L2": "#8DC9BE",
-    "ST_L3": "#9DD3C9",
-    "ST_L4": "#C99A8F",
-    # Alimentadoras Mi Macro (visibles sobre mapa oscuro)
-    "MC-L1": "#E8C547",
-    "MC-L1E": "#D4B23E",
-    "MP-A04": "#7EC8E8",
-    "MP-A05-2": "#6BB8DA",
-    # Líneas urbanas overlay (55, 231, 646, 615)
-    "RG_55": "#E9C46A",
-    "RG_231": "#4CC9F0",
-    "RG_646": "#F4A261",
-    "RG_615": "#90BE6D",
+# Capa del mapa según el grupo de la ruta en la base de transporte.
+LAYER_BY_GROUP: dict[str, str] = {
+    "tren": "metro",
+    "macro": "macro",
+    "sitren": "sitren",
+    "alimentadora": "feeder",
+    "troncal": "troncal",
+    "complementaria": "complementaria",
 }
-
-MODE_BY_ROUTE: dict[str, str] = {
-    "MACRO01_R": "brt",
-    "MACRO02_E": "brt",
-    "MT_L1": "train",
-    "MT_L2": "train",
-    "MT_L3": "train",
-    "ST_L1": "tram",
-    "ST_L1B": "tram",
-    "ST_L2": "tram",
-    "ST_L3": "tram",
-    "ST_L4": "tram",
+# Icono de vehículo según el modo.
+ICON_BY_MODE: dict[str, str] = {
+    "tren": "train",
+    "brt": "brt",
+    "trolebus": "bus",
+    "bus": "bus",
 }
+DEFAULT_COLOR = "#8A96A3"
+MASS_TRANSIT_LAYERS = frozenset({"metro", "macro", "sitren"})
 
 
-def route_layer(route_id: str, route_type: int = 3) -> str:
-    if route_id.startswith("RG_"):
-        return "regional"
-    if route_id in METRO_TRAIN_IDS or route_type == 0:
-        return "metro"
-    if route_id in METRO_TRAM_IDS or route_id.startswith("ST_"):
-        return "sitren"
-    if route_id in MACRO_IDS or route_id.startswith("MACRO"):
-        return "macro"
-    if route_id.startswith("MC-") or route_id.startswith("MP-"):
-        return "feeder"
-    return "bus"
+def route_layer(route: Route) -> str:
+    return LAYER_BY_GROUP.get(route.group, "bus")
 
 
-def route_color(route_id: str) -> str:
-    if route_id in ROUTE_COLORS:
-        return ROUTE_COLORS[route_id]
-    if route_id.startswith("MC-"):
-        return "#C9B458"
-    if route_id.startswith("MP-"):
-        return "#6EB5D8"
-    return "#8A96A3"
+def route_color(route: Route | None) -> str:
+    return (route.color if route else None) or DEFAULT_COLOR
 
 
-def route_mode(route_id: str, route_type: int = 3) -> str:
-    if route_id in MODE_BY_ROUTE:
-        return MODE_BY_ROUTE[route_id]
-    if route_type == 0:
-        return "train"
-    return "bus"
+def route_mode(route: Route | None) -> str:
+    return ICON_BY_MODE.get(route.mode if route else "bus", "bus")
+
+
+def route_summary(route: Route) -> dict[str, Any]:
+    return {
+        "route_id": route.route_id,
+        "short_name": route.route_short_name,
+        "long_name": route.route_long_name,
+        "legacy_number": route.legacy_number,
+        "branch_name": route.branch_name,
+        "label": route.label,
+        "route_type": route.route_type,
+        "layer": route_layer(route),
+        "mode": route_mode(route),
+        "color": route_color(route),
+    }
 
 
 def build_route_catalog(
-    gtfs: GTFSLoader, *, region: str | None = None
+    store: TransitStore, *, region: str | None = None
 ) -> list[dict[str, Any]]:
-    from .regional_overlay import regional_route_ids
-
-    allowed: set[str] | None = None
-    if region == "tonala_cucei":
-        allowed = regional_route_ids(gtfs)
-
     catalog: list[dict[str, Any]] = []
-    for route in gtfs.get_routes():
-        if allowed is not None and route.route_id not in allowed:
-            continue
-        stops = gtfs.get_stops_for_route(route.route_id)
+    for route in store.get_routes(region):
+        patterns = store.get_patterns(route.route_id, main_only=True)
         catalog.append(
             {
-                "route_id": route.route_id,
-                "short_name": route.route_short_name,
-                "long_name": route.route_long_name,
-                "route_type": route.route_type,
-                "layer": route_layer(route.route_id, route.route_type),
-                "mode": route_mode(route.route_id, route.route_type),
-                "color": route_color(route.route_id),
-                "stop_count": len(stops),
+                **route_summary(route),
+                "stop_count": len(store.get_stops_for_route(route.route_id)),
+                "directions": [
+                    {
+                        "pattern_id": pattern.pattern_id,
+                        "direction_id": pattern.direction_id,
+                        "headsign": pattern.headsign,
+                    }
+                    for pattern in patterns
+                ],
             }
         )
     return catalog
 
 
+def build_route_shape(
+    store: TransitStore, route_id: str, *, include_stops: bool = True
+) -> dict[str, Any] | None:
+    """Trazos de la ruta (uno por sentido) y, si se pide, sus paradas."""
+    route = store.find_route(route_id)
+    if route is None:
+        return None
+    patterns = store.get_patterns(route.route_id, main_only=True) or store.get_patterns(
+        route.route_id
+    )
+    if not patterns:
+        return None
+
+    paths = [
+        {
+            "pattern_id": pattern.pattern_id,
+            "direction_id": pattern.direction_id,
+            "headsign": pattern.headsign,
+            "length_km": round(pattern.length_m / 1000.0, 1),
+            # El feed no trae un trazo confiable: se unieron las paradas.
+            "approximate": pattern.shape_source == "paradas",
+            "coordinates": store.map_coordinates(pattern),
+        }
+        for pattern in patterns
+    ]
+    payload: dict[str, Any] = {
+        **route_summary(route),
+        "coordinates": paths[0]["coordinates"],
+        "paths": paths,
+    }
+    if include_stops:
+        stops: list[dict[str, Any]] = []
+        for pattern in patterns:
+            for sequence, stop_id in enumerate(pattern.stop_ids):
+                stop = store.get_stop(stop_id)
+                if stop is None:
+                    continue
+                stops.append(
+                    {
+                        "stop_id": stop.stop_id,
+                        "stop_name": stop.stop_name,
+                        "lat": stop.lat,
+                        "lon": stop.lon,
+                        "direction_id": pattern.direction_id,
+                        "headsign": pattern.headsign,
+                        "sequence": sequence,
+                    }
+                )
+        payload["stops"] = stops
+    return payload
+
+
+def build_featured_shapes(
+    store: TransitStore,
+    *,
+    include_bus: bool = False,
+    region: str | None = None,
+) -> list[dict[str, Any]]:
+    """
+    Trazos para dibujar la red. Con `region` se incluyen todas las rutas de la
+    zona; sin ella, solo tren, Macrobús y SiTren salvo que se pida `include_bus`.
+    """
+    shapes: list[dict[str, Any]] = []
+    for route in store.get_routes(region):
+        if (
+            region is None
+            and not include_bus
+            and route_layer(route) not in MASS_TRANSIT_LAYERS
+        ):
+            continue
+        shape = build_route_shape(store, route.route_id, include_stops=False)
+        if shape is not None:
+            shapes.append(shape)
+    return shapes
+
+
 def build_stop_layers(
-    gtfs: GTFSLoader, layers: set[str] | None = None
+    store: TransitStore, layers: set[str] | None = None
 ) -> dict[str, list[dict[str, Any]]]:
     wanted = layers or {"metro", "sitren", "macro", "bus"}
-    buckets: dict[str, dict[str, dict[str, Any]]] = {
-        key: {} for key in wanted
-    }
+    buckets: dict[str, dict[str, dict[str, Any]]] = {key: {} for key in wanted}
 
-    for route in gtfs.get_routes():
-        layer = route_layer(route.route_id, route.route_type)
+    for route in store.get_routes():
+        layer = route_layer(route)
+        if layer not in MASS_TRANSIT_LAYERS:
+            layer = "bus"
         if layer not in buckets:
             continue
-        for stop in gtfs.get_stops_for_route(route.route_id):
+        for stop in store.get_stops_for_route(route.route_id):
             entry = buckets[layer].get(stop.stop_id)
             if entry is None:
                 entry = {
@@ -151,106 +196,28 @@ def stop_to_feature(stop: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def build_featured_shapes(
-    gtfs: GTFSLoader,
-    *,
-    include_bus: bool = False,
-    region: str | None = None,
-) -> list[dict[str, Any]]:
-    from .regional_overlay import regional_route_ids, route_serves_tonala_cucei
-
-    regional_ids: set[str] | None = None
-    if region == "tonala_cucei":
-        regional_ids = regional_route_ids(gtfs)
-
-    shapes: list[dict[str, Any]] = []
-    for route in gtfs.get_routes():
-        layer = route_layer(route.route_id, route.route_type)
-        if layer == "bus" and not include_bus:
-            continue
-        if regional_ids is not None and route.route_id not in regional_ids:
-            continue
-        shape = build_route_shape(gtfs, route.route_id)
-        if shape is not None:
-            shapes.append(shape)
-    return shapes
-
-
 def find_nearby_stops(
-    gtfs: GTFSLoader,
+    store: TransitStore,
     lat: float,
     lon: float,
     *,
     radius_km: float = 0.65,
     limit: int = 20,
 ) -> list[dict[str, Any]]:
-    gtfs._assert_loaded()
-    scored: list[tuple[float, dict[str, Any]]] = []
-
-    for stop in gtfs.get_stops():
-        distance_km = haversine_km(lat, lon, stop.lat, stop.lon)
-        if distance_km > radius_km:
-            continue
-        routes = gtfs.get_routes_at_stop(stop.stop_id)
+    results: list[dict[str, Any]] = []
+    for stop, distance_km in store.stops_near(lat, lon, radius_km, limit=limit):
+        routes = store.get_routes_at_stop(stop.stop_id)
         if not routes:
             continue
-        scored.append(
-            (
-                distance_km,
-                {
-                    "stop_id": stop.stop_id,
-                    "stop_name": stop.stop_name,
-                    "lat": stop.lat,
-                    "lon": stop.lon,
-                    "distance_km": round(distance_km, 3),
-                    "distance_m": int(distance_km * 1000),
-                    "routes": [
-                        {
-                            "route_id": route.route_id,
-                            "short_name": route.route_short_name,
-                            "long_name": route.route_long_name,
-                            "color": route_color(route.route_id),
-                            "mode": route_mode(route.route_id, route.route_type),
-                            "layer": route_layer(route.route_id, route.route_type),
-                        }
-                        for route in routes
-                    ],
-                },
-            )
-        )
-
-    scored.sort(key=lambda item: item[0])
-    return [item[1] for item in scored[:limit]]
-
-
-def build_route_shape(gtfs: GTFSLoader, route_id: str) -> dict[str, Any] | None:
-    route = gtfs.find_route(route_id)
-    if route is None:
-        return None
-    stops: list[Stop] = gtfs.get_ordered_stops_for_route(route.route_id)
-    path = gtfs.get_route_path(route.route_id)
-    if not stops and not path:
-        return None
-    coordinates = (
-        [[lon, lat] for lat, lon in path]
-        if path
-        else [[s.lon, s.lat] for s in stops]
-    )
-    return {
-        "route_id": route.route_id,
-        "short_name": route.route_short_name,
-        "long_name": route.route_long_name,
-        "layer": route_layer(route.route_id, route.route_type),
-        "mode": route_mode(route.route_id, route.route_type),
-        "color": route_color(route.route_id),
-        "coordinates": coordinates,
-        "stops": [
+        results.append(
             {
-                "stop_id": s.stop_id,
-                "stop_name": s.stop_name,
-                "lat": s.lat,
-                "lon": s.lon,
+                "stop_id": stop.stop_id,
+                "stop_name": stop.stop_name,
+                "lat": stop.lat,
+                "lon": stop.lon,
+                "distance_km": round(distance_km, 3),
+                "distance_m": int(distance_km * 1000),
+                "routes": [route_summary(route) for route in routes],
             }
-            for s in stops
-        ],
-    }
+        )
+    return results

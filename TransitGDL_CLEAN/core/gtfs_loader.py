@@ -283,15 +283,6 @@ class GTFSLoader:
         self._trip_base_secs.update(trip_min_secs)
         self._frequency_trip_ids.update(self._trip_frequencies.keys())
 
-        freq_routes = len(
-            {
-                dep.route_id
-                for dep_list in self._departures_by_route_stop.values()
-                for dep in dep_list
-                if dep.trip_id in self._frequency_trip_ids
-            }
-        )
-
         self._loaded = True
         logger.info(
             "GTFS cargado: %s rutas, %s paradas, %s viajes (%s con frecuencia)",

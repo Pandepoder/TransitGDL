@@ -13,7 +13,9 @@ try:
 except ImportError:
     pass
 
-DEFAULT_GTFS_PATH = "data/gtfs_guadalajara.zip"
+DEFAULT_GTFS_PATH = "data/gtfs_amg.zip"
+DEFAULT_TRANSIT_DB_PATH = "data/transit.db"
+DEFAULT_LANDMARKS_PATH = "data/landmarks.json"
 DEFAULT_INCIDENTS_DB_PATH = "data/incidents.db"
 DEFAULT_FEEDBACK_DB_PATH = "data/feedback.db"
 
@@ -62,6 +64,11 @@ class TransitEngineConfig:
     twilio_auth_token: str = os.getenv("TWILIO_AUTH_TOKEN", "")
     require_twilio_signature: bool = _env_bool("REQUIRE_TWILIO_SIGNATURE", False)
     default_locale: str = os.getenv("DEFAULT_LOCALE", "es")
+    # Base de transporte derivada del GTFS (se reconstruye sola si falta).
+    transit_db_path: str = os.getenv("TRANSIT_DB_PATH", DEFAULT_TRANSIT_DB_PATH)
+    landmarks_path: str = os.getenv("LANDMARKS_PATH", DEFAULT_LANDMARKS_PATH)
+    # Región cuyas rutas simula la flota de demostración ("" = toda la red).
+    demo_region: str = os.getenv("DEMO_REGION", "tonala_cucei")
 
     def ensure_paths(self) -> None:
         Path(self.gtfs_path).parent.mkdir(parents=True, exist_ok=True)

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Literal, Optional
+from typing import Annotated, Any, Literal, Optional
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -28,7 +28,9 @@ async def diagnose(
     vehicles: Optional[int] = Query(
         None, ge=0, le=500, description="Vehículos en ruta (por omisión, los en vivo)"
     ),
-    clima: Optional[Clima] = Query(None, description="Escenario: forzar el clima"),
+    clima: Annotated[
+        Optional[Clima], Query(description="Escenario: forzar el clima")
+    ] = None,
     hora: Optional[int] = Query(None, ge=0, le=23, description="Escenario: hora"),
 ):
     """

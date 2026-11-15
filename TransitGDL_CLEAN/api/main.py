@@ -11,6 +11,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from api.deps import get_bot_handler, get_engine
+from api.routes.chat import router as chat_router
 from api.routes.demo import router as demo_router
 from api.routes.eta import router as eta_router
 from api.routes.expert import router as expert_router
@@ -19,7 +20,6 @@ from api.routes.fleet import router as fleet_router
 from api.routes.incidents import router as incidents_router
 from api.routes.map import router as map_router
 from api.routes.routes import router as routes_router
-from api.routes.chat import router as chat_router
 from api.routes.whatsapp import router as whatsapp_router
 from core import TransitEngine
 from core.config import CONFIG

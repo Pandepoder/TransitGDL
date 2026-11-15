@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 import json
 import logging
 import re
@@ -14,7 +15,6 @@ from core.models import Incident, IncidentSeverity
 logger = logging.getLogger(__name__)
 
 _REDIS_SESSION_PREFIX = "wa:session:"
-_REGIONAL_LINE_NUMBERS = frozenset({"55", "231", "646", "615"})
 
 
 class State(str, Enum):
@@ -25,6 +25,7 @@ class State(str, Enum):
     AWAIT_INCIDENT = "await_incident"
     AWAIT_FLEET_VEHICLES = "await_fleet_vehicles"
     AWAIT_FEEDBACK = "await_feedback"
+
 
 @dataclass
 class Session:
@@ -47,7 +48,11 @@ class Session:
     def from_dict(cls, data: dict) -> "Session":
         last_active_raw = data.get("last_active")
         try:
-            last_active = datetime.fromisoformat(last_active_raw) if last_active_raw else datetime.now(timezone.utc)
+            last_active = (
+                datetime.fromisoformat(last_active_raw)
+                if last_active_raw
+                else datetime.now(timezone.utc)
+            )
             if last_active.tzinfo is None:
                 last_active = last_active.replace(tzinfo=timezone.utc)
         except (ValueError, TypeError):
@@ -87,11 +92,14 @@ class ConversationHandler:
         if CONFIG.use_memory_cache or not (CONFIG.redis_url or "").strip():
             self._redis = None
             self._use_memory = True
-            logger.info("ConversationHandler: modo memoria (USE_MEMORY_CACHE o sin REDIS_URL).")
+            logger.info(
+                "ConversationHandler: modo memoria (USE_MEMORY_CACHE o sin REDIS_URL)."
+            )
             return
 
         try:
             import redis.asyncio as aioredis  # type: ignore[import-untyped]
+
             client = aioredis.from_url(
                 CONFIG.redis_url,
                 decode_responses=True,
@@ -103,7 +111,8 @@ class ConversationHandler:
             logger.info("ConversationHandler: sesiones respaldadas en Redis.")
         except Exception as exc:
             logger.warning(
-                "ConversationHandler: Redis no disponible (%s). Sesiones en memoria.", exc
+                "ConversationHandler: Redis no disponible (%s). Sesiones en memoria.",
+                exc,
             )
             self._redis = None
             self._use_memory = True
@@ -121,7 +130,10 @@ class ConversationHandler:
                     return session
                 return Session()
             except Exception as exc:
-                logger.warning("ConversationHandler: fallo lectura Redis (%s). Usando memoria.", exc)
+                logger.warning(
+                    "ConversationHandler: fallo lectura Redis (%s). Usando memoria.",
+                    exc,
+                )
                 self._use_memory = True
 
         # Fallback a memoria
@@ -136,10 +148,15 @@ class ConversationHandler:
         if not self._use_memory and self._redis is not None:
             try:
                 key = f"{_REDIS_SESSION_PREFIX}{sender}"
-                await self._redis.setex(key, self._session_ttl_seconds, json.dumps(session.to_dict()))
+                await self._redis.setex(
+                    key, self._session_ttl_seconds, json.dumps(session.to_dict())
+                )
                 return
             except Exception as exc:
-                logger.warning("ConversationHandler: fallo escritura Redis (%s). Usando memoria.", exc)
+                logger.warning(
+                    "ConversationHandler: fallo escritura Redis (%s). Usando memoria.",
+                    exc,
+                )
                 self._use_memory = True
 
         # Fallback a memoria con limpieza periódica de sesiones expiradas
@@ -147,7 +164,8 @@ class ConversationHandler:
         now = datetime.now(timezone.utc)
         if len(self._memory_sessions) > 1000:
             self._memory_sessions = {
-                k: v for k, v in self._memory_sessions.items()
+                k: v
+                for k, v in self._memory_sessions.items()
                 if now - v.last_active <= self.session_timeout
             }
 
@@ -166,7 +184,8 @@ class ConversationHandler:
         """Cuenta sesiones activas. En modo Redis devuelve el conteo en memoria (aproximado)."""
         now = datetime.now(timezone.utc)
         return sum(
-            1 for s in self._memory_sessions.values()
+            1
+            for s in self._memory_sessions.values()
             if now - s.last_active <= self.session_timeout
         )
 
@@ -183,13 +202,14 @@ class ConversationHandler:
         if lower.startswith("dev bus") and CONFIG.environment != "production":
             route = text.split(" ", 2)[-1].strip().upper()
             from core.models import BusPosition
+
             # Creamos un camión falso cerca de la Glorieta Minerva
             fake_bus = BusPosition(
                 vehicle_id=f"DEMO_{route}",
                 route_id=route,
-                lat=20.6695, 
+                lat=20.6695,
                 lon=-103.3870,
-                speed_kmh=45.0
+                speed_kmh=45.0,
             )
             await self.engine._gps.update(fake_bus)
             return f"🛠️ [DEV MODE] Camión inyectado mágicamente en la ruta {route} a 45 km/h. Pide tu ETA ahora."
@@ -199,7 +219,11 @@ class ConversationHandler:
             await self._reset_session(sender)
             return "Sesión reiniciada.\n\n" + self._menu()
 
-        if self._looks_like_greeting(lower) and session.state == State.IDLE and not session.route:
+        if (
+            self._looks_like_greeting(lower)
+            and session.state == State.IDLE
+            and not session.route
+        ):
             await self._save_session(sender, session)
             return self._welcome()
 
@@ -212,7 +236,15 @@ class ConversationHandler:
                 session.pending_prediction_id = None
                 await self._save_session(sender, session)
                 return await self.handle(sender, message)
-            if lower in {"menu", "menú", "clima", "lluvia", "incidencia", "rutas", "paradas"}:
+            if lower in {
+                "menu",
+                "menú",
+                "clima",
+                "lluvia",
+                "incidencia",
+                "rutas",
+                "paradas",
+            }:
                 session.state = State.IDLE
                 session.pending_prediction_id = None
                 await self._save_session(sender, session)
@@ -273,7 +305,9 @@ class ConversationHandler:
             except ValueError:
                 await self._save_session(sender, session)
                 return "Escribe un número de vehículos, por ejemplo: 3"
-            recommendation = await self.engine.get_fleet_recommendation(session.route or "", vehicles)
+            recommendation = await self.engine.get_fleet_recommendation(
+                session.route or "", vehicles
+            )
             session.state = State.IDLE
             await self._save_session(sender, session)
             return recommendation.summary()
@@ -309,15 +343,13 @@ class ConversationHandler:
         # Ruta sola: "646", "231", "RG_646" (no nombres de parada)
         route_only = self._resolve_route_input(text)
         if route_only and self._message_is_route_only(text):
-            gtfs = getattr(self.engine, "_gtfs", None)
-            route_obj = gtfs.find_route(route_only) if gtfs else None
-            if route_obj is not None:
-                session.route = route_obj.route_id
+            variants = self._route_variants(route_only)
+            if variants:
+                session.route = route_only
                 session.state = State.AWAIT_STOP
                 await self._save_session(sender, session)
-                return (
-                    f"Ruta *{route_obj.route_short_name}* ({route_obj.route_id}).\n"
-                    "¿En qué parada? Ej: *CUCEI*, *Loma Dorada*, *Tonaltecas*."
+                return self._describe_variants(variants) + (
+                    "\n¿En qué parada? Ej: *CUCEI*, *Tonalá Centro*, *Minerva*."
                 )
 
         # Parada sola en zona regional (sin verbos de consulta)
@@ -328,7 +360,20 @@ class ConversationHandler:
                 return stop_reply
 
         # FLUJO NATURAL MEJORADO
-        if any(keyword in lower for keyword in ["cuanto", "cuando", "tarda", "llega", "viene", "eta", "ruta", "camion", "hora pasa"]):
+        if any(
+            keyword in lower
+            for keyword in [
+                "cuanto",
+                "cuando",
+                "tarda",
+                "llega",
+                "viene",
+                "eta",
+                "ruta",
+                "camion",
+                "hora pasa",
+            ]
+        ):
             route = self._resolve_route_input(text) or self._extract_route(text)
             stop = self._extract_stop(text)
 
@@ -338,14 +383,18 @@ class ConversationHandler:
                     session.pending_prediction_id = result.prediction_id
                     session.state = State.AWAIT_FEEDBACK
                     await self._save_session(sender, session)
-                    return result.to_whatsapp_message() + "\n\n" + self._feedback_prompt()
-            
+                    return (
+                        result.to_whatsapp_message() + "\n\n" + self._feedback_prompt()
+                    )
+
             reply = await self.engine.ask(text)
             if reply:
                 await self._save_session(sender, session)
                 return reply
 
-        if any(keyword in lower for keyword in ["que rutas", "rutas pasan", "pasan por"]):
+        if any(
+            keyword in lower for keyword in ["que rutas", "rutas pasan", "pasan por"]
+        ):
             stop = self._extract_stop(text)
             if stop:
                 await self._save_session(sender, session)
@@ -396,8 +445,6 @@ class ConversationHandler:
             ]
         ):
             return True
-        if re.search(r"\b(55|231|646|615)\b", lower):
-            return True
         if re.fullmatch(r"[A-Za-z0-9 _.-]{3,40}", text.strip()) and not re.fullmatch(
             r"[1-5]", text.strip()
         ):
@@ -406,7 +453,17 @@ class ConversationHandler:
 
     @staticmethod
     def _looks_like_direct_eta(text: str) -> bool:
-        keywords = ["cuanto falta", "cuando pasa", "cuando llega", "cuanto tarda", "hora pasa", "ya viene", "donde viene", "tarda", "llega"]
+        keywords = [
+            "cuanto falta",
+            "cuando pasa",
+            "cuando llega",
+            "cuanto tarda",
+            "hora pasa",
+            "ya viene",
+            "donde viene",
+            "tarda",
+            "llega",
+        ]
         return any(word in text.lower() for word in keywords)
 
     @staticmethod
@@ -420,18 +477,19 @@ class ConversationHandler:
         if not cleaned:
             return None
 
-        gtfs = getattr(self.engine, "_gtfs", None)
-        if gtfs is not None and getattr(gtfs, "loaded", False):
-            route = gtfs.find_route(cleaned)
-            if route is not None:
-                return route.route_id
-
-        token = self._extract_route(cleaned)
-        if token and gtfs is not None and getattr(gtfs, "loaded", False):
-            route = gtfs.find_route(token)
-            if route is not None:
-                return route.route_id
-        return token
+        # Se devuelve la clave de la ruta, salvo cuando el texto corresponde a
+        # varios ramales (646): entonces se conserva el texto para que el motor
+        # elija el ramal que pasa por la parada.
+        if getattr(getattr(self.engine, "_gtfs", None), "loaded", False):
+            for candidate in (cleaned, self._extract_route(cleaned)):
+                if not candidate:
+                    continue
+                variants = self._route_variants(candidate)
+                if len(variants) == 1:
+                    return variants[0].route_id
+                if len(variants) > 1:
+                    return candidate.strip()
+        return self._extract_route(cleaned)
 
     @staticmethod
     def _extract_route(text: str) -> Optional[str]:
@@ -440,7 +498,7 @@ class ConversationHandler:
             return None
 
         patterns = [
-            r"\b([A-Za-z]{2,}[\w-]*\d[\w-]*)\b",
+            r"\b([A-Za-z]{1,6}[-_]?\d[\w-]*)\b",
             r"\b([A-Za-z]+-\w+)\b",
             r"\b(\d{1,4}\w*)\b",
         ]
@@ -456,21 +514,28 @@ class ConversationHandler:
     @staticmethod
     def _extract_stop(text: str) -> Optional[str]:
         # Intento 1: Buscar conectores explícitos
-        match = re.search(r"(?:en|por|parada|hacia|a la|el)\s+(.+)$", text, re.IGNORECASE)
+        match = re.search(
+            r"(?:en|por|parada|hacia|a la|el)\s+(.+)$", text, re.IGNORECASE
+        )
         if match:
             return match.group(1).strip(" ?.")
-        
+
         # Intento 2: Limpieza profunda de NLU
-        cleaned = re.sub(r"(?:ruta|l[íi]nea|cami[oó]n|bus|la|el|cuanto|cuando|falta|tarda|llega|viene|hora|pasa|eta|en|por)\b", "", text, flags=re.IGNORECASE)
-        cleaned = re.sub(r"\d+\w*", "", cleaned) # Quita números de ruta
+        cleaned = re.sub(
+            r"(?:ruta|l[íi]nea|cami[oó]n|bus|la|el|cuanto|cuando|falta|tarda|llega|viene|hora|pasa|eta|en|por)\b",
+            "",
+            text,
+            flags=re.IGNORECASE,
+        )
+        cleaned = re.sub(r"\d+\w*", "", cleaned)  # Quita números de ruta
         cleaned = cleaned.strip(" ?.,-")
-        
+
         return cleaned if len(cleaned) > 2 else None
 
     @staticmethod
     def _welcome() -> str:
         return (
-            "Hola. Soy el asistente de *TransitGDL* (zona CUCEI / Tonalá).\n\n"
+            "Hola. Soy el asistente de *TransitGDL* (transporte del Área Metropolitana de Guadalajara).\n\n"
             "*Menú rápido*\n"
             "1 · ETA (¿cuánto falta?)\n"
             "2 · Clima y retrasos\n"
@@ -478,11 +543,12 @@ class ConversationHandler:
             "4 · Reportar incidencia\n"
             "5 · Diagnóstico experto de una ruta\n\n"
             "*Ejemplos directos*\n"
-            "· *646* → luego escribe la parada\n"
-            "· *¿Cuánto falta la 646 en CUCEI?*\n"
+            "· *231* → luego escribe la parada\n"
+            "· *¿Cuánto falta la 231 en CUCEI?*\n"
             "· *¿Qué rutas pasan por CUCEI?*\n"
-            "· *Loma Dorada* (lista rutas)\n\n"
-            "Líneas demo: *55*, *231*, *646*, *615*."
+            "· *Minerva* (lista rutas)\n\n"
+            "Acepto la clave oficial (*T15*) o el número anterior (*231*). "
+            "Prueba con *231*, *55*, *615* o *646*."
         )
 
     @classmethod
@@ -505,12 +571,45 @@ class ConversationHandler:
 
     @staticmethod
     def _message_is_route_only(text: str) -> bool:
+        """El mensaje es solo una clave de ruta: 646, T15, C38-V1, MT_L3…"""
         cleaned = text.strip()
         if re.fullmatch(r"\d{1,4}[A-Za-z]?", cleaned):
             return True
-        if re.fullmatch(r"RG_\d{1,4}[A-Za-z]?", cleaned, re.IGNORECASE):
-            return True
-        return cleaned.lower() in _REGIONAL_LINE_NUMBERS
+        return bool(
+            re.fullmatch(
+                r"[A-Za-z]{1,6}[-_ ]?\d{1,3}[A-Za-z]?(?:[-_][A-Za-z0-9]+)*", cleaned
+            )
+        )
+
+    def _route_variants(self, route_text: str) -> list:
+        """Rutas que responden a un texto; un número antiguo puede tener varios ramales."""
+        gtfs = getattr(self.engine, "_gtfs", None)
+        if gtfs is None:
+            return []
+        finder = getattr(gtfs, "find_routes", None)
+        if callable(finder):
+            found = finder(route_text)
+            if isinstance(found, list):
+                return found
+        single = gtfs.find_route(route_text)
+        return [single] if single is not None else []
+
+    @staticmethod
+    def _describe_variants(variants: list) -> str:
+        if len(variants) == 1:
+            route = variants[0]
+            detail = (
+                f" — {route.branch_name}" if getattr(route, "branch_name", "") else ""
+            )
+            return f"Ruta *{getattr(route, 'label', route.route_short_name)}*{detail}."
+        lines = ["Esa ruta tiene varios ramales:"]
+        for route in variants[:5]:
+            detail = (
+                f" — {route.branch_name}" if getattr(route, "branch_name", "") else ""
+            )
+            lines.append(f"· *{route.route_short_name}*{detail}")
+        lines.append("Te doy el ramal que pase por tu parada.")
+        return "\n".join(lines)
 
     @staticmethod
     def _message_is_stop_only(text: str) -> bool:
@@ -530,7 +629,7 @@ class ConversationHandler:
             ]
         ):
             return False
-        if re.search(r"\b(55|231|646|615)\b", lower):
+        if re.search(r"\d", lower):
             return False
         cleaned = text.strip()
         if not (3 <= len(cleaned) <= 48):
@@ -542,18 +641,15 @@ class ConversationHandler:
         return True
 
     async def _handle_stop_only_query(self, text: str) -> Optional[str]:
-        """Responde a paradas escritas solas: CUCEI, Loma Dorada, Tonaltecas."""
-        if hasattr(self.engine, "search_stops"):
-            if not self.engine.search_stops(text, limit=1):
-                return None
+        """Responde a paradas o lugares escritos solos: CUCEI, Minerva, Tonaltecas."""
         if hasattr(self.engine, "describe_routes_at_stop"):
             reply = self.engine.describe_routes_at_stop(text)
-            if "No encontré" not in reply:
+            if isinstance(reply, str) and "No encontré" not in reply:
                 return (
                     reply
-                    + "\n\nPara ETA: *¿Cuánto falta la [ruta] en "
+                    + "\n\nPara el tiempo de llegada: *¿Cuánto falta la [ruta] en "
                     + text.strip()
-                    + "?* (ej. 646, 55, 615)"
+                    + "?*"
                 )
         return None
 
@@ -567,11 +663,26 @@ class ConversationHandler:
             return "Entendido. " + self._menu()
 
         rating_map = {
-            "1": 1, "antes": 1, "temprano": 1,
-            "2": 2, "puntual": 2, "exacto": 2, "si": 2, "sí": 2, "ok": 2,
-            "3": 3, "poco": 3, "casi": 3,
-            "4": 4, "tarde": 4, "retraso": 4,
-            "5": 5, "mucho": 5, "muy tarde": 5, "no llego": 5, "no llegó": 5,
+            "1": 1,
+            "antes": 1,
+            "temprano": 1,
+            "2": 2,
+            "puntual": 2,
+            "exacto": 2,
+            "si": 2,
+            "sí": 2,
+            "ok": 2,
+            "3": 3,
+            "poco": 3,
+            "casi": 3,
+            "4": 4,
+            "tarde": 4,
+            "retraso": 4,
+            "5": 5,
+            "mucho": 5,
+            "muy tarde": 5,
+            "no llego": 5,
+            "no llegó": 5,
         }
 
         rating: Optional[int] = None
@@ -579,9 +690,7 @@ class ConversationHandler:
         if digit_match:
             rating = int(digit_match.group(1))
         else:
-            word_ratings = {
-                k: v for k, v in rating_map.items() if len(k) > 1
-            }
+            word_ratings = {k: v for k, v in rating_map.items() if len(k) > 1}
             for keyword, value in word_ratings.items():
                 if re.search(rf"\b{re.escape(keyword)}\b", lower):
                     rating = value
@@ -593,7 +702,10 @@ class ConversationHandler:
                 actual = float(match.group(1))
                 if hasattr(self.engine, "record_feedback"):
                     self.engine.record_feedback(prediction_id, actual_minutes=actual)
-                return f"Anotado: llegó en {round(actual)} min. ¡Gracias! \n\n" + self._menu()
+                return (
+                    f"Anotado: llegó en {round(actual)} min. ¡Gracias! \n\n"
+                    + self._menu()
+                )
 
             return (
                 "No entendí tu calificación. Responde con:\n"
@@ -612,7 +724,11 @@ class ConversationHandler:
             4: "Gracias. Llegó bastante tarde, lo tomaremos en cuenta.",
             5: "Lamentamos el retraso. Tu calificación ayuda a mejorar las estimaciones.",
         }
-        return responses.get(rating, "Gracias por tu calificación.") + "\n\n" + self._menu()
+        return (
+            responses.get(rating, "Gracias por tu calificación.")
+            + "\n\n"
+            + self._menu()
+        )
 
     @staticmethod
     def _feedback_prompt() -> str:

@@ -45,12 +45,8 @@ class ETAEngine:
         stop: str,
         live_positions: Optional[list[BusPosition]] = None,
     ) -> ETAResult | None:
-        route_obj = self.gtfs.find_route(route)
-        if route_obj is None:
-            return None
-
-        stop_obj = self._resolve_stop(route_obj, stop)
-        if stop_obj is None:
+        route_obj, stop_obj, place = self._resolve_route_and_stop(route, stop)
+        if route_obj is None or stop_obj is None:
             return None
 
         condition = await self.weather.get_current_condition()
@@ -69,11 +65,72 @@ class ETAEngine:
             )
             if live_result is not None:
                 live_result.weather_condition = condition.value
-                return live_result
+                if schedule_result is not None:
+                    live_result.headsign = schedule_result.headsign
+                    live_result.direction_id = schedule_result.direction_id
+                    live_result.pattern_id = schedule_result.pattern_id
+                return self._decorate(live_result, route_obj, place)
 
         if schedule_result is not None:
             schedule_result.weather_condition = condition.value
+            self._decorate(schedule_result, route_obj, place)
         return schedule_result
+
+    @staticmethod
+    def _decorate(
+        result: ETAResult, route: Route, place: tuple[str, float] | None
+    ) -> ETAResult:
+        label = getattr(route, "label", None)
+        if isinstance(label, str):
+            result.route_label = label
+        if place is not None:
+            result.place_name, result.walk_meters = place
+        return result
+
+    def _candidate_routes(self, route: str) -> list[Route]:
+        """Rutas que responden a la consulta; un número antiguo puede tener varios ramales."""
+        finder = getattr(self.gtfs, "find_routes", None)
+        if callable(finder):
+            found = finder(route)
+            if isinstance(found, list):
+                return found
+        single = self.gtfs.find_route(route)
+        return [single] if single is not None else []
+
+    def _resolve_route_and_stop(
+        self, route: str, stop: str
+    ) -> tuple[Route | None, Stop | None, tuple[str, float] | None]:
+        """
+        Elige el ramal de la ruta que pasa por la parada pedida. Si el texto no
+        es una parada de la ruta pero sí un lugar conocido ("CUCEI"), usa la
+        parada de la ruta más cercana a ese lugar.
+        """
+        candidates = self._candidate_routes(route)[:6]
+        for route_obj in candidates:
+            stop_obj = self._resolve_stop(route_obj, stop)
+            if stop_obj is not None:
+                return route_obj, stop_obj, None
+        for route_obj in candidates:
+            near = self._resolve_stop_by_place(route_obj, stop)
+            if near is not None:
+                return route_obj, near[0], (near[1], near[2])
+        return (candidates[0] if candidates else None), None, None
+
+    def _resolve_stop_by_place(
+        self, route: Route, stop_query: str
+    ) -> tuple[Stop, str, float] | None:
+        find_landmark = getattr(self.gtfs, "find_landmark", None)
+        near_stops = getattr(self.gtfs, "stops_of_route_near", None)
+        if not callable(find_landmark) or not callable(near_stops):
+            return None
+        landmark = find_landmark(stop_query)
+        if landmark is None or not hasattr(landmark, "lat"):
+            return None
+        options = near_stops(route.route_id, landmark.lat, landmark.lon)
+        if not isinstance(options, list) or not options:
+            return None
+        best = min(options, key=lambda option: option.distance_m)
+        return best.stop, landmark.name, best.distance_m
 
     def _resolve_stop(self, route: Route, stop_query: str) -> Stop | None:
         if not stop_query or not stop_query.strip():
@@ -99,27 +156,32 @@ class ETAEngine:
     def _search_route_stops(
         self, route_stops: Iterable[Stop], stop_query: str
     ) -> Stop | None:
+        """
+        Busca entre las paradas de la ruta por nombre: coincidencia exacta,
+        frase contenida o todas las palabras significativas presentes. En caso
+        de empate gana el nombre más corto y, después, el orden del recorrido.
+        """
         normalized_query = self.gtfs._normalize(stop_query)
         if not normalized_query:
             return None
 
-        best_match: tuple[int, int, Stop] | None = None
-        query_tokens = [token for token in normalized_query.split() if token]
+        tokens = [token for token in normalized_query.split() if len(token) >= 3]
+        best_key: tuple[int, int] | None = None
+        best_stop: Stop | None = None
         for stop in route_stops:
             name_norm = self.gtfs._normalize(stop.stop_name)
-            score = 0
             if normalized_query == name_norm:
                 score = 100
             elif normalized_query in name_norm:
                 score = 80
-            elif any(token in name_norm for token in query_tokens):
+            elif tokens and all(token in name_norm for token in tokens):
                 score = 60
-            if score <= 0:
+            else:
                 continue
-            candidate = (-score, len(stop.stop_name), stop)
-            if best_match is None or candidate < best_match:
-                best_match = candidate
-        return best_match[2] if best_match else None
+            key = (-score, len(stop.stop_name))
+            if best_key is None or key < best_key:
+                best_key, best_stop = key, stop
+        return best_stop
 
     def _stop_served_by_route(self, stop_id: str, route_id: str) -> bool:
         routes = self.gtfs.get_routes_at_stop(stop_id)
@@ -212,10 +274,22 @@ class ETAEngine:
             return None
 
         first = departures[0]
+        # En una estación que sirven ambos sentidos, el resultado describe un
+        # solo sentido: el de la primera pasada.
+        pattern_id = first.get("pattern_id")
+        if pattern_id:
+            departures = self.gtfs.get_next_departures(
+                route.route_id,
+                stop.stop_id,
+                current_minutes,
+                limit=4,
+                pattern_id=pattern_id,
+            )
+            first = departures[0]
         minutes_until = float(first["minutes_until"])
         service_day_offset = int(first.get("service_day_offset", 0))
         eta_minutes = minutes_until + weather_delay
-        headway = self.gtfs.get_average_headway(
+        headway = first.get("headway_minutes") or self.gtfs.get_average_headway(
             route.route_id, stop.stop_id, current_minutes=current_minutes
         )
 
@@ -264,6 +338,9 @@ class ETAEngine:
             window_start_minutes=max(0.0, eta_minutes - window_padding),
             window_end_minutes=max(0.0, eta_minutes + window_padding),
             learned_correction_minutes=learned_correction,
+            headsign=first.get("headsign"),
+            direction_id=first.get("direction_id"),
+            pattern_id=pattern_id,
             next_departures=[
                 ScheduledDeparture(
                     departure_time=str(item["departure_time"]),

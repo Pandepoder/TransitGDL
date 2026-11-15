@@ -248,22 +248,22 @@ class TestFullIntegration:
         routes = gtfs_loader.get_routes()
         assert len(routes) >= 3
         ids = [r.route_id for r in routes]
-        assert "MACRO01_R" in ids  # Macrobús L-1 del GTFS real de GDL
+        assert "MC-L1" in ids  # Mi Macro Calzada, del GTFS real de GDL
 
     def test_gtfs_has_stops(self, gtfs_loader):
         stops = gtfs_loader.search_stops("Orozco")
         assert len(stops) >= 1
 
     def test_gtfs_has_stop_times(self, gtfs_loader):
-        route = gtfs_loader.find_route("MACRO01_R")
+        route = gtfs_loader.find_route("MC-L1")
         assert route is not None
         departures = gtfs_loader.get_next_departures(
-            route.route_id, "MACRO_001_003", 0, limit=3
+            route.route_id, "MM_003", 0, limit=3
         )
         assert len(departures) >= 1
 
     def test_eta_from_schedule_with_real_gtfs(self):
-        result = asyncio.run(self.engine.get_eta("MACRO01_R", "Artes Plásticas"))
+        result = asyncio.run(self.engine.get_eta("MC-L1", "Artes Plásticas"))
         assert result is not None
         assert result.estimated_minutes >= 0
         assert result.source == "schedule"
@@ -279,7 +279,9 @@ class TestFullIntegration:
     def test_bot_eta_end_to_end(self):
         handler = ConversationHandler(self.engine)
         reply = asyncio.run(
-            handler.handle("+521234567890", "¿Cuánto falta la MACRO01_R en Artes Plásticas?")
+            handler.handle(
+                "+521234567890", "¿Cuánto falta la MC-L1 en Artes Plásticas?"
+            )
         )
         # Debe dar ETA real o mensaje de no encontrado — nunca crash
         assert isinstance(reply, str) and len(reply) > 10
@@ -287,11 +289,11 @@ class TestFullIntegration:
     def test_menu_eta_accepts_gtfs_route_ids(self):
         handler = ConversationHandler(self.engine)
         asyncio.run(handler.handle("+521", "1"))
-        asyncio.run(handler.handle("+521", "MACRO01_R"))
+        asyncio.run(handler.handle("+521", "MC-L1"))
         reply = asyncio.run(handler.handle("+521", "Artes Plásticas"))
         assert "min" in reply.lower()
 
     def test_resolve_route_input_supports_gtfs_ids(self):
         handler = ConversationHandler(self.engine)
-        assert handler._resolve_route_input("MACRO01_R") == "MACRO01_R"
-        assert handler._resolve_route_input("MT_L1") == "MT_L1"
+        assert handler._resolve_route_input("MC-L1") == "MC-L1"
+        assert handler._resolve_route_input("MT_L3") == "MT_L3"

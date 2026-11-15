@@ -12,7 +12,9 @@ router = APIRouter(prefix="/demo", tags=["demo"])
 
 def _require_development() -> None:
     if CONFIG.environment.strip().lower() == "production":
-        raise HTTPException(status_code=403, detail="Demo controls are disabled in production.")
+        raise HTTPException(
+            status_code=403, detail="Demo controls are disabled in production."
+        )
 
 
 @router.post("/weather", summary="Simular clima (solo desarrollo)")
@@ -56,7 +58,9 @@ async def get_demo_weather():
 @router.post("/inject-vehicle", summary="Inyectar vehículo cerca de una parada")
 async def inject_vehicle(
     route_id: str = Query(..., min_length=1, max_length=32),
-    stop: str | None = Query(None, description="Nombre de parada (ej. Artes Plásticas)"),
+    stop: str | None = Query(
+        None, description="Nombre de parada (ej. Artes Plásticas)"
+    ),
     lat: float | None = Query(None, ge=14, le=23),
     lon: float | None = Query(None, ge=-118, le=-86),
     speed_kmh: float = Query(42.0, ge=5, le=120),
@@ -81,7 +85,7 @@ async def inject_vehicle(
         if eta is not None:
             stop_obj = engine._gtfs.get_stop(eta.stop_id)
             if stop_obj is not None:
-                lat, lon = stop_obj.stop_lat, stop_obj.stop_lon
+                lat, lon = stop_obj.lat, stop_obj.lon
         if lat is None:
             q = stop.strip().lower()
             route_stops = engine._gtfs.get_stops_for_route(route.route_id)
@@ -91,7 +95,7 @@ async def inject_vehicle(
                 pick = matches[0] if matches else None
             if pick is None:
                 raise HTTPException(status_code=404, detail="Stop not found.")
-            lat, lon = pick.stop_lat, pick.stop_lon
+            lat, lon = pick.lat, pick.lon
 
     position = BusPosition(
         vehicle_id=f"DEMO_{route.route_id}",

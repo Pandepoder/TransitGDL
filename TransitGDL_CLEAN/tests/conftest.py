@@ -4,18 +4,22 @@ tests/conftest.py — Fixtures compartidas para pytest.
 Uso:
     pytest tests/ -v
 
+Las pruebas usan `tests/fixtures/gtfs_mini.zip`, un recorte del GTFS oficial
+con siete rutas reales (se regenera con `python scripts/make_test_fixture.py`).
+No hacen llamadas de red: el clima se simula despejado.
+
 Fixtures disponibles:
     mock_weather_clear  → WeatherClient simulado, sin lluvia
     mock_weather_rain   → WeatherClient simulado, con lluvia
     sample_stop         → Stop de ejemplo (Av. Vallarta)
     sample_route        → Route de ejemplo (Ruta 45)
-    bus_near_stop       → BusPosition a 300m de la parada
+    bus_near_stop       → BusPosition a 300 m de la parada
     demand_analyzer     → DemandAnalyzer con clima despejado
-    gtfs_loader         → GTFSLoader cargado con GTFS de demo
-    engine              → TransitEngine completo (con GTFS demo)
+    gtfs_loader         → TransitStore cargado con el GTFS de prueba
+    engine              → TransitEngine completo sobre el GTFS de prueba
 """
 
-import subprocess
+import os
 import sys
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
@@ -25,33 +29,26 @@ import pytest
 # Asegurar que el root del proyecto está en el path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from core.demand_analyzer import DemandAnalyzer
-from core.eta_engine import ETAEngine
-from core.gtfs_loader import GTFSLoader
-from core.models import BusPosition, Route, Stop, WeatherCondition
-from core.weather_client import WeatherClient
+os.environ.setdefault("DEMO_SIMULATOR", "false")
 
-DEMO_GTFS = Path("data/gtfs_guadalajara.zip")
+from core.config import CONFIG  # noqa: E402
+from core.demand_analyzer import DemandAnalyzer  # noqa: E402
+from core.eta_engine import ETAEngine  # noqa: E402
+from core.models import BusPosition, Route, Stop, WeatherCondition  # noqa: E402
+from core.transit import TransitStore  # noqa: E402
+from core.weather_client import WeatherClient  # noqa: E402
 
+# Sin red durante las pruebas: el clima real se sustituye por "despejado".
+CONFIG.use_mock_weather = True
 
-# ─────────────────────────────────────────
-#  ASEGURAR GTFS DE DEMO
-# ─────────────────────────────────────────
+FIXTURE_GTFS = Path("tests/fixtures/gtfs_mini.zip")
+LANDMARKS = Path("data/landmarks.json")
 
-
-def pytest_configure(config):
-    """Genera el GTFS de demo si no existe, antes de correr los tests."""
-    import os
-
-    os.environ.setdefault("DEMO_SIMULATOR", "false")
-    if not DEMO_GTFS.exists():
-        print("\n[conftest] Generando GTFS de demo...")
-        subprocess.run(
-            [sys.executable, "scripts/seed_demo.py"],
-            input=b"s\n",
-            check=True,
-        )
-        print("[conftest] GTFS de demo listo.")
+# Rutas y paradas reales presentes en el GTFS de prueba.
+BRT_ROUTE = "MC-L1"  # Mi Macro Calzada
+BRT_STOP_ID = "MM_003"  # Artes Plásticas, sentido Mirador
+BRT_STOP_NAME = "Artes Plásticas"
+TRAIN_ROUTE = "MT_L3"  # Línea 3 del tren ligero
 
 
 # ─────────────────────────────────────────
@@ -134,34 +131,35 @@ def eta_engine(mock_weather_clear):
 
 
 # ─────────────────────────────────────────
-#  FIXTURES CON GTFS REAL (demo)
+#  FIXTURES CON EL GTFS DE PRUEBA
 # ─────────────────────────────────────────
 
 
 @pytest.fixture(scope="session")
-def gtfs_loader():
-    """GTFSLoader cargado con el GTFS de demo. Scope session = carga una sola vez."""
-    loader = GTFSLoader(str(DEMO_GTFS))
-    loader.load()
-    return loader
+def gtfs_loader(tmp_path_factory):
+    """
+    Base de transporte construida desde el GTFS de prueba (una vez por sesión).
+    Conserva el nombre histórico `gtfs_loader`; hoy es un `TransitStore`.
+    """
+    db_path = tmp_path_factory.mktemp("transit") / "transit.db"
+    store = TransitStore(FIXTURE_GTFS, db_path, LANDMARKS).load()
+    yield store
+    store.close()
 
 
 @pytest.fixture(scope="session")
 def engine(gtfs_loader):
-    """TransitEngine completo con GTFS demo, sin Redis (modo memoria)."""
+    """TransitEngine completo sobre el GTFS de prueba, sin Redis ni red."""
     from core import TransitEngine
-    from core.eta_engine import ETAEngine
     from core.feedback_store import FeedbackStore
+    from core.gps_cache import GPSCache
     from core.incident_store import IncidentStore
     from core.prediction_learner import PredictionLearner
-    from core.weather_client import WeatherClient
 
     e = TransitEngine()
     e._gtfs = gtfs_loader
     e._initialized = True
     # GPSCache en modo memoria (sin Redis)
-    from core.gps_cache import GPSCache
-
     cache = GPSCache.__new__(GPSCache)
     cache._use_memory = True
     cache._memory = {}
@@ -173,7 +171,7 @@ def engine(gtfs_loader):
     e._feedback_store = FeedbackStore(":memory:")
     e._feedback_store.initialize()
     e._learner = PredictionLearner(e._feedback_store)
-    e._eta = ETAEngine(e._gtfs, WeatherClient(), learner=e._learner)
+    e._eta = ETAEngine(e._gtfs, e._weather, learner=e._learner)
     return e
 
 

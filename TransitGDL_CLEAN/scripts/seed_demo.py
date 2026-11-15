@@ -207,9 +207,19 @@ def build_gtfs_zip(output_path: Path):
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Genera un GTFS demo para Guadalajara.")
-    parser.add_argument("--output", default="data/gtfs_guadalajara.zip", help="Ruta del archivo ZIP a crear")
-    parser.add_argument("--force", action="store_true", help="Sobrescribe el archivo de salida si ya existe")
+    parser = argparse.ArgumentParser(
+        description="Genera un GTFS demo para Guadalajara."
+    )
+    parser.add_argument(
+        "--output",
+        default="data/gtfs_demo.zip",
+        help="Ruta del archivo ZIP a crear",
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Sobrescribe el archivo de salida si ya existe",
+    )
     args = parser.parse_args(argv)
 
     output = Path(args.output)
@@ -218,7 +228,9 @@ def main(argv: list[str] | None = None) -> int:
         try:
             resp = input("   Sobreescribir? [s/N] ").strip().lower()
         except EOFError:
-            print("Cancelado por entrada no interactiva. Usa --force para sobrescribir.")
+            print(
+                "Cancelado por entrada no interactiva. Usa --force para sobrescribir."
+            )
             return 1
         if resp != "s":
             print("Cancelado.")

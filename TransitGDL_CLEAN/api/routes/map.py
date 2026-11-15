@@ -24,6 +24,33 @@ MAP_WS_INTERVAL = 2.0
 VALID_LAYERS = frozenset({"metro", "sitren", "macro", "bus"})
 
 
+def _region_key(region: str | None) -> str | None:
+    return None if region in (None, "", "all") else region
+
+
+async def _live_positions(engine, region: str | None = None) -> list[dict]:
+    """Posiciones en vivo con los datos de su ruta; con `region`, solo las de la zona."""
+    positions = await engine._gps.get_all_positions()
+    store = engine._gtfs
+    allowed = store.route_ids_in_region(region) if region else None
+    items: list[dict] = []
+    for pos in positions:
+        if allowed is not None and pos.route_id not in allowed:
+            continue
+        route = store.get_route(pos.route_id)
+        pattern = store.get_pattern(pos.pattern_id) if pos.pattern_id else None
+        items.append(
+            {
+                **pos.model_dump(mode="json"),
+                "short_name": route.route_short_name if route else pos.route_id,
+                "headsign": pattern.headsign if pattern else None,
+                "mode": route_mode(route),
+                "color": route_color(route),
+            }
+        )
+    return items
+
+
 @router.get("/ping")
 async def map_ping():
     return {"ok": True, "map_api": True}
@@ -36,39 +63,23 @@ async def map_bootstrap(
         description="tonala_cucei | all — filtra rutas de la zona CUCEI/Tonalá",
     ),
 ):
-    """Una sola llamada para cargar mapa: rutas, líneas, vehículos."""
+    """Una sola llamada para cargar el mapa: rutas, trazos y vehículos."""
     engine = get_engine()
     if isinstance(engine, TransitEngine) and engine._initialized:
         await engine.ensure_simulator()
-    positions = await engine._gps.get_all_positions()
-    routes = {r.route_id: r for r in engine._gtfs.get_routes()}
-    region_key = None if region in (None, "", "all") else region
-    shapes = build_featured_shapes(
-        engine._gtfs, include_bus=False, region=region_key
-    )
+    region_key = _region_key(region)
+    positions = await _live_positions(engine, region_key)
     return {
         "ok": True,
         "region": region_key or "all",
         "simulator": engine.simulator_active,
         "vehicle_count": len(positions),
+        "feed": engine._gtfs.feed_info(),
         "routes": build_route_catalog(engine._gtfs, region=region_key),
-        "shapes": shapes,
-        "positions": [
-            {
-                **pos.model_dump(mode="json"),
-                "short_name": (
-                    routes[pos.route_id].route_short_name
-                    if pos.route_id in routes
-                    else pos.route_id
-                ),
-                "mode": route_mode(
-                    pos.route_id,
-                    routes[pos.route_id].route_type if pos.route_id in routes else 3,
-                ),
-                "color": route_color(pos.route_id),
-            }
-            for pos in positions
-        ],
+        "shapes": build_featured_shapes(
+            engine._gtfs, include_bus=False, region=region_key
+        ),
+        "positions": positions,
     }
 
 
@@ -92,10 +103,7 @@ async def map_stops(
     engine = get_engine()
     if layer:
         parts = {part.strip() for part in layer.split(",") if part.strip()}
-        invalid = parts - VALID_LAYERS
-        if invalid:
-            parts = parts & VALID_LAYERS
-        wanted = parts or VALID_LAYERS
+        wanted = (parts & VALID_LAYERS) or set(VALID_LAYERS)
     else:
         wanted = set(VALID_LAYERS)
 
@@ -113,23 +121,13 @@ async def map_stops(
 
 
 @router.get("/positions")
-async def map_positions():
+async def map_positions(
+    region: str | None = Query(None, description="Limitar a las rutas de una región"),
+):
     engine = get_engine()
     if isinstance(engine, TransitEngine) and engine._initialized:
         await engine.ensure_simulator()
-    positions = await engine._gps.get_all_positions()
-    routes = {r.route_id: r for r in engine._gtfs.get_routes()}
-    items = []
-    for pos in positions:
-        route = routes.get(pos.route_id)
-        items.append(
-            {
-                **pos.model_dump(mode="json"),
-                "short_name": route.route_short_name if route else pos.route_id,
-                "mode": route_mode(pos.route_id, route.route_type if route else 3),
-                "color": route_color(pos.route_id),
-            }
-        )
+    items = await _live_positions(engine, _region_key(region))
     return {
         "count": len(items),
         "simulator": engine.simulator_active,
@@ -146,9 +144,7 @@ async def map_nearby(
     limit: int = Query(20, ge=1, le=50),
 ):
     engine = get_engine()
-    stops = find_nearby_stops(
-        engine._gtfs, lat, lon, radius_km=radius_km, limit=limit
-    )
+    stops = find_nearby_stops(engine._gtfs, lat, lon, radius_km=radius_km, limit=limit)
     return {
         "lat": lat,
         "lon": lon,
@@ -160,7 +156,7 @@ async def map_nearby(
 
 @router.get("/routes/shapes")
 async def map_featured_shapes(
-    transit_only: bool = Query(True, description="Metro, SiTren y Macrobús"),
+    transit_only: bool = Query(True, description="Solo tren, Macrobús y SiTren"),
 ):
     engine = get_engine()
     shapes = build_featured_shapes(engine._gtfs, include_bus=not transit_only)
@@ -203,38 +199,20 @@ async def map_route_shape(route_id: str):
 
 
 @router.websocket("/ws")
-async def map_live_ws(websocket: WebSocket):
+async def map_live_ws(websocket: WebSocket, region: str | None = None):
     await websocket.accept()
     engine = get_engine()
     if isinstance(engine, TransitEngine) and engine._initialized:
         await engine.ensure_simulator()
+    region_key = _region_key(region)
     try:
         while True:
-            positions = await engine._gps.get_all_positions()
-            routes = {r.route_id: r for r in engine._gtfs.get_routes()}
             await websocket.send_json(
                 {
                     "type": "positions",
                     "simulator": engine.simulator_active,
                     "updated_at": datetime.now(timezone.utc).isoformat(),
-                    "positions": [
-                        {
-                            **pos.model_dump(mode="json"),
-                            "short_name": (
-                                routes[pos.route_id].route_short_name
-                                if pos.route_id in routes
-                                else pos.route_id
-                            ),
-                            "mode": route_mode(
-                                pos.route_id,
-                                routes[pos.route_id].route_type
-                                if pos.route_id in routes
-                                else 3,
-                            ),
-                            "color": route_color(pos.route_id),
-                        }
-                        for pos in positions
-                    ],
+                    "positions": await _live_positions(engine, region_key),
                 }
             )
             await asyncio.sleep(MAP_WS_INTERVAL)

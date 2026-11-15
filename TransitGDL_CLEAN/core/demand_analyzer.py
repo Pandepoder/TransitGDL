@@ -4,11 +4,7 @@ import logging
 from datetime import datetime
 from math import ceil
 
-try:
-    import holidays  # type: ignore[import-untyped]
-except Exception:  # pragma: no cover
-    holidays = None
-
+from .calendar_utils import es_festivo
 from .models import DemandSnapshot, FleetAction, FleetRecommendation, WeatherCondition
 from .timezone_utils import GDL_TZ
 from .weather_client import WeatherClient
@@ -87,13 +83,7 @@ class DemandAnalyzer:
 
     @staticmethod
     def _is_holiday(now: datetime) -> bool:
-        if holidays is None:
-            return False
-        try:
-            mx = holidays.country_holidays("MX", subdiv="JAL")
-            return now.date() in mx
-        except Exception:  # pragma: no cover
-            return False
+        return es_festivo(now)
 
     @staticmethod
     def _demand_level(factor: float) -> str:

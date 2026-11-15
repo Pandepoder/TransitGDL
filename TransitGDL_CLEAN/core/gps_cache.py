@@ -66,6 +66,9 @@ class GPSCache:
         el último fallo. Devuelve True si la reconexión fue exitosa.
         Usa getattr para tolerar objetos construidos con __new__ en tests.
         """
+        # Si el modo memoria se eligió por configuración, no hay nada que reintentar.
+        if CONFIG.use_memory_cache:
+            return False
         redis_url = getattr(self, "_redis_url", None)
         if not redis_url:
             return False

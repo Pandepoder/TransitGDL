@@ -9,7 +9,7 @@ import logging
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
-from ..demand_analyzer import DemandAnalyzer
+from ..calendar_utils import es_festivo
 from ..models import IncidentSeverity, Route, haversine_km
 from ..prediction_learner import MIN_SAMPLES_TO_APPLY, _day_type, _hour_bucket
 from ..timezone_utils import GDL_TZ
@@ -48,7 +48,7 @@ async def recolectar_hechos(
         "clima": clima.value,
         "hora": ahora.hour,
         "es_fin_de_semana": ahora.weekday() >= 5,
-        "es_festivo": DemandAnalyzer._is_holiday(ahora),
+        "es_festivo": es_festivo(ahora),
         "tipo_ruta": route.route_type,
         "vehiculos_en_ruta": int(vehiculos),
     }

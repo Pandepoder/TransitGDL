@@ -21,7 +21,7 @@ class _Departure:
     route_id: str
     service_id: str
     stop_id: str
-    departure_minutes: int    # minutos enteros desde medianoche (compatibilidad)
+    departure_minutes: int  # minutos enteros desde medianoche (compatibilidad)
     departure_seconds: float  # segundos exactos desde medianoche (para frecuencias)
     departure_time: str
     stop_sequence: int
@@ -30,9 +30,10 @@ class _Departure:
 @dataclass(slots=True)
 class _FreqWindow:
     """Ventana horaria de un servicio de frecuencia (frequencies.txt)."""
-    start_secs: float   # inicio de la ventana en segundos desde medianoche
-    end_secs: float     # fin de la ventana en segundos desde medianoche
-    headway_secs: float # frecuencia en segundos (headway_secs del GTFS)
+
+    start_secs: float  # inicio de la ventana en segundos desde medianoche
+    end_secs: float  # fin de la ventana en segundos desde medianoche
+    headway_secs: float  # frecuencia en segundos (headway_secs del GTFS)
 
 
 class GTFSLoader:
@@ -71,6 +72,10 @@ class GTFSLoader:
         self._shape_points: dict[str, list[tuple[float, float]]] = {}
         # route_id → shape_id principal (el más usado en trips.txt)
         self._route_shape_id: dict[str, str] = {}
+        # Última fecha de vigencia declarada por el feed (máximo end_date de
+        # calendar.txt). Pasada esa fecha, sus servicios se tratan como patrón
+        # semanal recurrente para que un feed vencido siga dando horarios.
+        self._feed_last_date: date | None = None
 
     @property
     def loaded(self) -> bool:
@@ -163,10 +168,20 @@ class GTFSLoader:
             points.sort(key=lambda item: item[0])
             self._shape_points[shape_id] = [(lat, lon) for _, lat, lon in points]
 
+        self._feed_last_date = None
         for row in calendar_rows:
             service_id = row.get("service_id", "").strip()
             if service_id:
                 self._service_calendars[service_id] = dict(row)
+                end = (row.get("end_date") or "").strip()
+                try:
+                    end_date = self._parse_service_date(end) if end else None
+                except ValueError:
+                    end_date = None
+                if end_date and (
+                    self._feed_last_date is None or end_date > self._feed_last_date
+                ):
+                    self._feed_last_date = end_date
 
         for row in calendar_dates_rows:
             service_id = row.get("service_id", "").strip()
@@ -268,12 +283,14 @@ class GTFSLoader:
         self._trip_base_secs.update(trip_min_secs)
         self._frequency_trip_ids.update(self._trip_frequencies.keys())
 
-        freq_routes = len({
-            dep.route_id
-            for dep_list in self._departures_by_route_stop.values()
-            for dep in dep_list
-            if dep.trip_id in self._frequency_trip_ids
-        })
+        freq_routes = len(
+            {
+                dep.route_id
+                for dep_list in self._departures_by_route_stop.values()
+                for dep in dep_list
+                if dep.trip_id in self._frequency_trip_ids
+            }
+        )
 
         self._loaded = True
         logger.info(
@@ -413,9 +430,7 @@ class GTFSLoader:
                 best_ids = ordered
 
         if best_ids:
-            return [
-                self._stops[sid] for sid in best_ids if sid in self._stops
-            ]
+            return [self._stops[sid] for sid in best_ids if sid in self._stops]
 
         stop_ids = self._route_stops.get(route.route_id, [])
         return [self._stops[sid] for sid in stop_ids if sid in self._stops]
@@ -431,7 +446,9 @@ class GTFSLoader:
         if shape_id and shape_id in self._shape_points:
             return list(self._shape_points[shape_id])
 
-        return [(s.lat, s.lon) for s in self.get_ordered_stops_for_route(route.route_id)]
+        return [
+            (s.lat, s.lon) for s in self.get_ordered_stops_for_route(route.route_id)
+        ]
 
     def get_stops_for_route(self, route_id: str) -> list[Stop]:
         return self.get_ordered_stops_for_route(route_id)
@@ -490,7 +507,9 @@ class GTFSLoader:
                     upcoming.extend(freq_deps)
                 else:
                     # Stop_times explícito: lógica original
-                    absolute_minutes = departure.departure_minutes + day_offset * 24 * 60
+                    absolute_minutes = (
+                        departure.departure_minutes + day_offset * 24 * 60
+                    )
                     delta = absolute_minutes - current_minutes
                     if delta < 0:
                         continue
@@ -628,6 +647,12 @@ class GTFSLoader:
             "saturday",
             "sunday",
         ][service_date.weekday()]
+        # Feed vencido: sus servicios valen como patrón semanal. La decisión se
+        # toma con la vigencia del propio feed, no según haya otros servicios
+        # activos (un servicio añadido después no debe apagar a los demás).
+        feed_last = self._feed_last_date
+        feed_expired = feed_last is not None and service_date > feed_last
+
         active: set[str] = set()
         for service_id, row in self._service_calendars.items():
             if row.get(weekday_column, "0") != "1":
@@ -635,10 +660,15 @@ class GTFSLoader:
             if not ignore_date_range:
                 start = row.get("start_date", "")
                 end = row.get("end_date", "")
-                if start and service_date < self._parse_service_date(start):
-                    continue
-                if end and service_date > self._parse_service_date(end):
-                    continue
+                end_date = self._parse_service_date(end) if end else None
+                from_expired_feed = feed_expired and (
+                    end_date is None or end_date <= feed_last
+                )
+                if not from_expired_feed:
+                    if start and service_date < self._parse_service_date(start):
+                        continue
+                    if end_date and service_date > end_date:
+                        continue
             active.add(service_id)
 
         # Aplicar excepciones de calendar_dates.txt:
@@ -670,7 +700,9 @@ class GTFSLoader:
 
         gaps: list[float] = []
         for previous, current in zip(departures, departures[1:], strict=False):
-            gap = float(current["absolute_minutes"]) - float(previous["absolute_minutes"])
+            gap = float(current["absolute_minutes"]) - float(
+                previous["absolute_minutes"]
+            )
             if gap > 0:
                 gaps.append(gap)
         if not gaps:

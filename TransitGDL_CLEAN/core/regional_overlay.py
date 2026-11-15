@@ -337,27 +337,6 @@ def _inject_route(gtfs: GTFSLoader, definition: _OverlayRoute) -> None:
     gtfs._shape_points[shape_id] = _densify_path(path_pts, segments_per_leg=3)
     gtfs._route_shape_id[route.route_id] = shape_id
 
-    # #region agent log
-    try:
-        from .debug_log import agent_log
-
-        max_leg = _max_stop_leg_km(definition.stops)
-        agent_log(
-            "core/regional_overlay.py:_inject_route",
-            "route_injected",
-            {
-                "route_id": definition.route_id,
-                "stop_count": len(definition.stops),
-                "waypoint_count": len(path_pts),
-                "shape_points": len(gtfs._shape_points[shape_id]),
-                "max_stop_leg_km": round(max_leg, 2),
-            },
-            hypothesis_id="B",
-        )
-    except Exception:
-        pass
-    # #endregion
-
     trip_prefix = f"TRIP_{definition.route_id}"
     gtfs._trips_by_route.setdefault(route.route_id, set())
 

@@ -224,8 +224,6 @@ def find_nearby_stops(
 
 
 def build_route_shape(gtfs: GTFSLoader, route_id: str) -> dict[str, Any] | None:
-    from .debug_log import agent_log
-
     route = gtfs.find_route(route_id)
     if route is None:
         return None
@@ -238,21 +236,6 @@ def build_route_shape(gtfs: GTFSLoader, route_id: str) -> dict[str, Any] | None:
         if path
         else [[s.lon, s.lat] for s in stops]
     )
-    # #region agent log
-    if coordinates:
-        agent_log(
-            "core/map_catalog.py:build_route_shape",
-            "shape_built",
-            {
-                "route_id": route.route_id,
-                "short_name": route.route_short_name,
-                "point_count": len(coordinates),
-                "first": coordinates[0],
-                "last": coordinates[-1],
-            },
-            hypothesis_id="B",
-        )
-    # #endregion
     return {
         "route_id": route.route_id,
         "short_name": route.route_short_name,

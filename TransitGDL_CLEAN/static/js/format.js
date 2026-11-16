@@ -38,13 +38,23 @@ export function distanceText(meters) {
   return `${(meters / 1000).toFixed(1)} km`;
 }
 
+// Los horarios del feed están en la hora de Guadalajara, sin importar la del navegador.
+const CLOCK = new Intl.DateTimeFormat("es-MX", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "America/Mexico_City" });
+
+/** Hora (HH:MM, Guadalajara) dentro de `minutes` minutos. */
+export function clockIn(minutes) {
+  return CLOCK.format(new Date(Date.now() + Math.max(0, minutes) * 60000));
+}
+
 export function rangeText(lo, hi) {
   if (lo == null || hi == null) return "";
   const a = Math.round(lo);
   const b = Math.round(hi);
   if (b <= a) return `Cerca de ${minutesText(a)}`;
   if (a <= 0) return `En menos de ${minutesText(b)}`;
-  return `Llega entre ${a} y ${minutesText(b)}`;
+  // Con más de una hora de anticipación se entiende mejor la hora del reloj.
+  if (a >= 60) return `Llega entre las ${clockIn(a)} y las ${clockIn(b)}`;
+  return `Llega entre ${minutesText(a)} y ${minutesText(b)}`;
 }
 
 export function methodBadge(eta) {

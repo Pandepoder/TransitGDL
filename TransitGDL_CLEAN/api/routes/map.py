@@ -236,8 +236,9 @@ async def map_route_detail(route_id: str):
         "active_incidents": [i.model_dump(mode="json") for i in incidents],
         "headway_minutes": headway,
         "eta_impact_note": (
-            "Las incidencias activas en esta ruta suman ~2 min al ETA "
-            "y reducen la confianza de la predicción."
+            "Las incidencias activas retrasan a las unidades que pasan por el "
+            "tramo afectado, según su gravedad; los tiempos estimados ya lo "
+            "consideran."
             if incidents
             else None
         ),

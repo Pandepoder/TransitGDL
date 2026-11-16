@@ -116,12 +116,15 @@ export class ExpertPane {
       ${route
         ? `<div class="route-head">${routeChip(route)}<span class="row-main"><span class="row-title">${esc(route.label || route.short_name)}</span><span class="row-sub">${esc(route.long_name)}</span></span></div>`
         : `<div class="empty"><span>Elige una ruta (en el mapa, el buscador o la pestaña Rutas) para diagnosticarla.</span></div>`}
-      <div class="grid-2">
+      <div class="grid-2" style="grid-template-columns:repeat(auto-fit,minmax(104px,1fr))">
         <label class="field">Clima
           <select id="ex-clima"><option value="">El actual</option><option value="clear">Despejado</option><option value="cloudy">Nublado</option><option value="rain">Lluvia</option><option value="thunderstorm">Tormenta</option><option value="fog">Niebla</option></select>
         </label>
         <label class="field">Hora
           <select id="ex-hora"><option value="">La actual</option>${hours}</select>
+        </label>
+        <label class="field">Día
+          <select id="ex-dia"><option value="">Hoy</option><option value="laboral">Entre semana</option><option value="sabado">Sábado</option><option value="domingo">Domingo</option><option value="festivo">Festivo</option></select>
         </label>
       </div>
       <div class="btn-row">
@@ -142,6 +145,7 @@ export class ExpertPane {
           this.app.selectedRoute.route_id,
           this.root.querySelector("#ex-clima").value,
           this.root.querySelector("#ex-hora").value,
+          this.root.querySelector("#ex-dia").value,
         );
         box.innerHTML = this._diagnosis(d);
       } catch (error) {

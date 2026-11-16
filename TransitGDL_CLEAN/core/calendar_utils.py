@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from functools import lru_cache
 
 try:
@@ -31,3 +31,27 @@ def es_festivo(fecha: date | datetime) -> bool:
     """True si la fecha es un día festivo oficial en México."""
     dia = fecha.date() if isinstance(fecha, datetime) else fecha
     return dia in _festivos_del_anio(dia.year)
+
+
+TIPOS_DE_DIA = ("laboral", "sabado", "domingo", "festivo")
+
+
+def dia_del_tipo(tipo: str, hasta: date) -> date:
+    """
+    El día más reciente (en o antes de `hasta`) del tipo pedido: laboral sin
+    festivo, sábado, domingo o festivo. Sirve para plantear escenarios.
+    """
+    if tipo not in TIPOS_DE_DIA:
+        raise ValueError(f"Tipo de día desconocido: {tipo}")
+    for atras in range(0, 400):
+        dia = hasta - timedelta(days=atras)
+        festivo = es_festivo(dia)
+        if tipo == "festivo" and festivo:
+            return dia
+        if tipo == "laboral" and dia.weekday() < 5 and not festivo:
+            return dia
+        if tipo == "sabado" and dia.weekday() == 5 and not festivo:
+            return dia
+        if tipo == "domingo" and dia.weekday() == 6:
+            return dia
+    return hasta

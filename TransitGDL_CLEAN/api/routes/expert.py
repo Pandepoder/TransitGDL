@@ -10,6 +10,7 @@ from api.deps import get_engine
 router = APIRouter(prefix="/expert", tags=["expert"])
 
 Clima = Literal["clear", "cloudy", "rain", "thunderstorm", "fog", "snow"]
+Dia = Literal["laboral", "sabado", "domingo", "festivo"]
 
 
 class InferRequest(BaseModel):
@@ -30,16 +31,22 @@ def _validar_accion(accion: Optional[str]) -> None:
 
 @router.get("/diagnose", summary="Diagnóstico experto de una ruta")
 async def diagnose(
-    route_id: str = Query(
-        ..., min_length=1, max_length=32, pattern=r"^[A-Za-z0-9 _-]+$"
-    ),
+    route_id: str = Query(..., min_length=1, max_length=32, pattern=r"^[\w -]+$"),
     vehicles: Optional[int] = Query(
-        None, ge=0, le=500, description="Vehículos en ruta (por omisión, los en vivo)"
+        None,
+        ge=0,
+        le=500,
+        description="Flota en servicio (conteo del operador). Sin ella, el "
+        "diagnóstico no compara la flota: las unidades con GPS son una muestra.",
     ),
     clima: Annotated[
         Optional[Clima], Query(description="Escenario: forzar el clima")
     ] = None,
     hora: Optional[int] = Query(None, ge=0, le=23, description="Escenario: hora"),
+    dia: Annotated[
+        Optional[Dia],
+        Query(description="Escenario: tipo de día (por omisión, hoy)"),
+    ] = None,
     por_que_no: Optional[str] = Query(
         None,
         max_length=40,
@@ -49,7 +56,7 @@ async def diagnose(
 ):
     """
     Reúne los hechos actuales de la ruta y ejecuta el motor de inferencia.
-    `clima` y `hora` permiten plantear escenarios "¿qué pasaría si…?", y
+    `clima`, `hora` y `dia` permiten plantear escenarios "¿qué pasaría si…?", y
     `por_que_no` explica qué faltó para recomendar una acción.
     """
     _validar_accion(por_que_no)
@@ -58,6 +65,9 @@ async def diagnose(
         overrides["clima"] = clima
     if hora is not None:
         overrides["hora"] = hora
+    if dia is not None:
+        overrides["dia"] = dia
+    escenario = dict(overrides)
 
     engine = get_engine()
     diagnostico = await engine.diagnose_route(
@@ -66,7 +76,7 @@ async def diagnose(
     if diagnostico is None:
         raise HTTPException(status_code=404, detail="Ruta no encontrada.")
     payload = diagnostico.model_dump(mode="json")
-    payload["escenario"] = overrides
+    payload["escenario"] = escenario
     return payload
 
 

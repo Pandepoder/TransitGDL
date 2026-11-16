@@ -103,6 +103,11 @@ class WeatherClient:
     def clear_demo_override(self) -> None:
         self._demo_override = None
 
+    def state_for(self, condition: WeatherCondition | str) -> WeatherState:
+        """Clima de un escenario ("¿y si llueve?"), con la intensidad típica."""
+        parsed = self._coerce_condition(condition)
+        return WeatherState(parsed, float(_NOMINAL_INTENSITY.get(parsed, 0.0)))
+
     @property
     def is_simulated(self) -> bool:
         return self._demo_override is not None

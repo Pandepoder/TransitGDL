@@ -33,6 +33,7 @@ async def recolectar_hechos(
     route: Route,
     vehiculos: int | None = None,
     ahora: datetime | None = None,
+    clima: str | None = None,
 ) -> tuple[dict[str, Any], list[str]]:
     """
     Devuelve (hechos iniciales, nombres de rutas alternas).
@@ -41,9 +42,15 @@ async def recolectar_hechos(
     que reportan GPS son otro dato: con rastreo parcial (o en la demostración)
     son una muestra, así que solo cuentan como flota si así se configura
     (`GPS_COBERTURA_COMPLETA`).
+
+    `ahora` y `clima` plantean un escenario: la frecuencia, la hora pico y la
+    flota necesaria se calculan para ese momento y ese clima.
     """
     ahora = ahora or datetime.now(GDL_TZ)
-    estado = await engine._weather.get_current_state()
+    if clima:
+        estado = engine._weather.state_for(clima)
+    else:
+        estado = await engine._weather.get_current_state()
 
     con_gps = len(await engine._gps.get_positions_for_route(route.route_id))
     en_servicio = vehiculos

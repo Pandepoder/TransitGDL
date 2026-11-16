@@ -39,7 +39,7 @@ from ..gtfs_loader import GTFSLoader
 
 logger = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 SHAPE_TOLERANCE_M = 2.0  # trazo para referencia lineal
 MAP_TOLERANCE_M = 7.0  # trazo ligero para dibujar en el mapa
@@ -646,7 +646,7 @@ def build_transit_db(
         headsigns = []
         for _, trip_ids in route_groups:
             votes = Counter(trips[t].get("trip_headsign", "") for t in trip_ids)
-            headsigns.append(votes.most_common(1)[0][0])
+            headsigns.append(_clean_headsign(votes.most_common(1)[0][0]))
         if len(set(declared)) > 1 or len(set(headsigns)) <= 1:
             directions = declared
         else:
@@ -886,6 +886,8 @@ def build_transit_db(
         base = _BUS_CODE_RE.match(route["short_name"].upper())
         if base and base.group(1) != route["short_name"].upper():
             add_alias(base.group(1), rid, "base", 3)
+        for text, rank in _system_aliases(route):
+            add_alias(text, rid, "sistema", rank)
 
     # Rutas del catálogo sin viajes (complementarias como T15-C06, "231C"):
     # su clave y su número antiguo llevan a la troncal de la familia, y la
@@ -1315,6 +1317,46 @@ def _within(
         return False
     dx = (lon - zone_lon) * METERS_PER_DEGREE * 0.936  # cos(20.6°)
     return dx * dx + dy * dy <= radius_m * radius_m
+
+
+_LINE_NUMBER_RE = re.compile(r"^L(\d+)$", re.IGNORECASE)
+
+
+def _system_aliases(route: dict[str, Any]) -> list[tuple[str, int]]:
+    """
+    Nombres con que la gente busca las rutas de un sistema: "Línea 3" o "Tren
+    Ligero" para Mi Tren, "Macrobús" para Mi Macro, "SiTren 3" para SiTren.
+    (alias, rango): "línea 3" lleva primero al Tren Ligero y después a SiTren.
+    """
+    rid = route["route_id"].upper()
+    line = _LINE_NUMBER_RE.match(route["short_name"])
+    number = line.group(1) if line else None
+    if route["grp"] == "tren":
+        aliases = [("tren ligero", 2), ("mi tren", 2), ("tren", 2)]
+        if number:
+            aliases += [(f"linea {number}", 1), (f"tren {number}", 1)]
+            aliases += [(f"tren l{number}", 1), (f"linea l{number}", 1)]
+        return aliases
+    if route["grp"] == "sitren":
+        aliases = [("sitren", 2), ("si tren", 2)]
+        if number:
+            aliases += [(f"sitren {number}", 1), (f"sitren l{number}", 1)]
+            aliases += [(f"linea {number}", 4)]
+        return aliases
+    if route["grp"] == "macro":
+        if rid.startswith("MC-"):
+            return [("macrobus", 2), ("mi macro", 2), ("mi macro calzada", 1)]
+        if rid.startswith("MP-"):
+            return [("mi macro periferico", 1), ("macro periferico", 1)]
+    return []
+
+
+def _clean_headsign(headsign: str) -> str:
+    """Destinos escritos todo en mayúsculas ("AUDITORIO") pasan a nombre propio."""
+    letters = [c for c in headsign if c.isalpha()]
+    if letters and all(c.isupper() for c in letters):
+        return clean_stop_name(headsign)
+    return headsign
 
 
 def _merge_duplicate_patterns(

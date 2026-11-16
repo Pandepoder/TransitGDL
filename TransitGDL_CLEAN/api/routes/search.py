@@ -2,21 +2,14 @@
 
 from __future__ import annotations
 
-import re
-
 from fastapi import APIRouter, Query
 
 from api.deps import get_engine
+from core.intents import parse_route_at_stop
 from core.map_catalog import route_summary
 from core.models import haversine_km
 
 router = APIRouter(tags=["search"])
-
-# "231 en CUCEI", "T15 por Minerva", "la 646 hacia Tonalá"
-_INTENT_RE = re.compile(
-    r"^(?:la\s+|ruta\s+)?(?P<route>[\w-]+)\s+(?:en|por|hacia|a)\s+(?P<stop>.+)$",
-    re.IGNORECASE,
-)
 
 
 def _matching_routes(store, text: str, limit: int) -> list:
@@ -106,9 +99,9 @@ async def search(
     text = q.strip()
 
     intent = None
-    match = _INTENT_RE.match(text)
-    if match and store.find_routes(match.group("route")):
-        intent = {"route": match.group("route"), "stop": match.group("stop").strip()}
+    parsed = parse_route_at_stop(text)
+    if parsed and store.find_routes(parsed.route):
+        intent = {"route": parsed.route, "stop": parsed.stop}
 
     # "231 en CUCEI": la ruta y el lugar se buscan cada uno por su lado.
     route_text = intent["route"] if intent else text

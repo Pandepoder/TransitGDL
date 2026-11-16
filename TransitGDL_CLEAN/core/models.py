@@ -46,6 +46,9 @@ class IncidentSeverity(str, Enum):
     CRITICAL = "critical"
 
 
+_SYSTEM_PREFIX = {"tren": "Tren", "sitren": "SiTren"}
+
+
 class Route(FlexibleModel):
     model_config = ConfigDict(extra="ignore")
 
@@ -68,7 +71,13 @@ class Route(FlexibleModel):
 
     @property
     def label(self) -> str:
-        """Clave oficial con el número antiguo, p. ej. "T15 (antes 231)"."""
+        """
+        Clave oficial con el número antiguo, p. ej. "T15 (antes 231)". El Tren
+        Ligero y SiTren comparten claves ("L3"), así que llevan el sistema:
+        "Tren L3", "SiTren L3".
+        """
+        if self.group in _SYSTEM_PREFIX:
+            return f"{_SYSTEM_PREFIX[self.group]} {self.display_name}"
         if self.legacy_number and self.legacy_number != self.route_short_name:
             return f"{self.display_name} (antes {self.legacy_number})"
         return self.display_name
@@ -290,6 +299,11 @@ class ETAResult(FlexibleModel):
 
         if self.alerts:
             lines.append("Avisos: " + "; ".join(self.alerts[:2]))
+
+        # Avisos sobre los datos oficiales (ruta del catálogo sin viajes, tiempos
+        # reconstruidos, recorrido incompleto): el usuario debe saberlo.
+        for note in self.data_notes[:2]:
+            lines.append(f"Datos: {note}")
 
         if self.other_options:
             lines.append("También pasan por aquí:")

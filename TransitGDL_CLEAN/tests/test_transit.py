@@ -472,7 +472,7 @@ def test_route_metadata(gtfs_loader):
     assert t15.label == "T15 (antes 231)"
     assert t15.branch_name == "Prolongacion Alcalde"
     tren = gtfs_loader.find_route("MT_L3")
-    assert (tren.group, tren.mode, tren.label) == ("tren", "tren", "L3")
+    assert (tren.group, tren.mode, tren.label) == ("tren", "tren", "Tren L3")
     # Los dos ramales de la 646 comparten color; rutas distintas no.
     assert (
         gtfs_loader.find_route("T04A-1").color == gtfs_loader.find_route("T04A-2").color
@@ -541,7 +541,7 @@ def test_place_resolves_to_real_stops_per_direction(gtfs_loader):
     place = gtfs_loader.resolve_place("CUCEI")
     labels = [r.label for r in gtfs_loader.routes_at_place(place)]
     assert place.kind == "lugar"
-    assert "T15 (antes 231)" in labels and "L3" in labels
+    assert "T15 (antes 231)" in labels and "Tren L3" in labels
     assert "T04A-1 (antes 646)" not in labels
 
 

@@ -353,7 +353,13 @@ class ETAEngine:
                     if weather_extra or penalty_min
                     else "horario_oficial"
                 )
-                half = self._half(float(ETA["sigma_horario_min"])) + weather_extra / 2.0
+                # Cuanto más lejos la salida, más puede moverse: el rango crece
+                # con la anticipación.
+                half = (
+                    self._half(float(ETA["sigma_horario_min"]))
+                    + weather_extra / 2.0
+                    + float(ETA["rango_horario_fraccion"]) * max(0.0, base_minutes)
+                )
                 low, high = base_minutes - half, base_minutes + half
                 next_departures = [
                     ScheduledDeparture(
@@ -381,7 +387,9 @@ class ETAEngine:
             high = eta_minutes + self._half(spread)
 
         half_width = (high - low) / 2.0
-        confidence, label = self._confidence(half_width)
+        confidence, label = self._limit_by_data_quality(
+            *self._confidence(half_width), getattr(pattern, "issues", ())
+        )
 
         return ETAResult(
             route_number=route.route_short_name,
@@ -435,6 +443,22 @@ class ETAEngine:
     def _half(sigma_minutes: float) -> float:
         """Media anchura del rango reportado para una desviación dada."""
         return float(ETA["z_ventana"]) * sigma_minutes
+
+    @staticmethod
+    def _limit_by_data_quality(
+        confidence: float, label: str, issues: Iterable[str]
+    ) -> tuple[float, str]:
+        """
+        La confianza no puede ser mayor que la calidad de los datos oficiales:
+        con tiempos reconstruidos o un recorrido dudoso es baja; con solo las
+        terminales o un trazo aproximado, a lo más media.
+        """
+        issues = set(issues)
+        if issues & {"tiempos_estimados", "recorrido_dudoso"}:
+            return min(confidence, 0.55), "baja"
+        if issues & {"solo_terminales", "trazo_aproximado"} and label == "alta":
+            return min(confidence, 0.75), "media"
+        return confidence, label
 
     @staticmethod
     def _confidence(half_width_minutes: float) -> tuple[float, str]:

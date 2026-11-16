@@ -53,6 +53,9 @@ eta:
   sigma_minima_min: 0.5
   # Incertidumbre de un horario con hora exacta (minutos, 1 desviación).
   sigma_horario_min: 1.5
+  # Además, el rango de un horario crece con la anticipación: esta fracción de
+  # la espera se suma a cada lado (5 % de 4 h ≈ ±12 min).
+  rango_horario_fraccion: 0.05
   # El rango que se reporta cubre ±z desviaciones (1.28 ≈ 80 % de los casos).
   z_ventana: 1.28
   # Espera esperada de una unidad detenida en la terminal antes de salir.

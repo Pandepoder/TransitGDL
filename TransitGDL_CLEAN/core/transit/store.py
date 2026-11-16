@@ -63,6 +63,8 @@ PATTERN_NOTES = {
 }
 
 _MODE_PRIORITY = {"tren": 0, "brt": 1, "trolebus": 2, "bus": 3}
+# Palabras que la gente antepone a la clave de una ruta ("ruta 231", "la 646").
+_ROUTE_FILLER_RE = re.compile(r"^(?:(?:la|el|ruta|camion|troncal)\s+)+")
 _TOKEN_RE = re.compile(r"[a-z0-9]+")
 _KM_PER_DEGREE = 111.195
 
@@ -435,6 +437,11 @@ class TransitStore:
         if not normalized:
             return []
         ids = self._alias.get(normalized)
+        if not ids:
+            # "ruta 231", "la 646", "el camión T15": se ignoran esas palabras.
+            stripped = _ROUTE_FILLER_RE.sub("", normalized)
+            if stripped and stripped != normalized:
+                ids = self._alias.get(stripped)
         if ids:
             return [self._routes[rid] for rid in ids]
         return [

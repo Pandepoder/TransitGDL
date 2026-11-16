@@ -12,7 +12,7 @@ router = APIRouter(prefix="/eta", tags=["eta"])
 
 @router.get("/")
 async def get_eta(
-    route: str = Query(..., min_length=1, max_length=32, pattern=r"^[A-Za-z0-9 _-]+$"),
+    route: str = Query(..., min_length=1, max_length=32, pattern=r"^[\w -]+$"),
     stop: str = Query(..., min_length=2, max_length=120),
     locale: str = Depends(get_locale),
 ):
@@ -38,7 +38,7 @@ async def get_eta(
 
 @router.get("/options", summary="Llegadas de una ruta en una parada, por sentido")
 async def eta_options(
-    route: str = Query(..., min_length=1, max_length=32, pattern=r"^[A-Za-z0-9 _-]+$"),
+    route: str = Query(..., min_length=1, max_length=32, pattern=r"^[\w -]+$"),
     stop: str = Query(..., min_length=2, max_length=120),
     locale: str = Depends(get_locale),
 ):

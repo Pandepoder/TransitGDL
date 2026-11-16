@@ -88,15 +88,20 @@ const app = {
     if (detail) await this._loadOptions(routeId, stopId, patternId);
   },
 
-  /** "231 en CUCEI": ruta y parada o lugar. */
+  /** "231 en CUCEI", "Línea 3 por Juárez": ruta y parada o lugar (igual que core/intents.py). */
   async openIntent(text) {
-    const match = /^(?:la\s+|ruta\s+)?([\w-]+)\s+(?:en|por|hacia|a)\s+(.+)$/i.exec(text.trim());
+    const match = /^(?:(?:la|el|ruta|cami[oó]n)\s+)*((?:(?:l[ií]nea|tren|sitren)\s+)?[\p{L}\p{N}_-]+)\s+(?:en|por|hacia|a)\s+(.+?)\s*[?.!]*$/iu.exec(text.trim().replace(/^[¿¡\s]+/, ""));
     if (!match) return this.openPlace(text);
+    return this.openRouteAt(match[1], match[2].trim(), text);
+  },
+
+  /** Llegadas de una ruta en una parada o lugar. */
+  async openRouteAt(route, stop, text = `${route} en ${stop}`) {
     search.setText(text);
     showTab("arrivals");
     arrivals.loading();
     sheet.open(1);
-    await this._loadOptions(match[1], match[2].trim(), null, { fit: true });
+    await this._loadOptions(route, stop, null, { fit: true });
   },
 
   async _loadOptions(route, stop, preferredPattern, { fit = false } = {}) {
@@ -248,7 +253,8 @@ const sheet = initSheet();
 const search = initSearch({
   search: (text) => api.search(text),
   onPick(item) {
-    if (item.kind === "intent") return app.openIntent(`${item.route} en ${item.stop}`);
+    // El servidor ya separó la ruta y la parada: no se vuelve a interpretar el texto.
+    if (item.kind === "intent") return app.openRouteAt(item.route, item.stop);
     if (item.kind === "route") {
       search.setText(item.label || item.short_name);
       return app.selectRoute(item.route_id);

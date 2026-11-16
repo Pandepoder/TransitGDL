@@ -2,6 +2,7 @@
 import { api } from "./api.js";
 import {
   CONFIDENCE_TEXT,
+  clockIn,
   distanceText,
   esc,
   methodBadge,
@@ -75,7 +76,7 @@ export class ArrivalsPane {
     this.root.innerHTML = `
       ${this._routeHead(detail)}
       ${this._directionToggle(detail.paths.map((p) => ({ id: p.pattern_id, label: toward(p.headsign) })), path.pattern_id)}
-      ${path.approximate ? `<p class="small muted">El trazo oficial de este sentido no es confiable; se dibuja uniendo sus paradas.</p>` : ""}
+      ${(path.notes || []).map((n) => `<p class="data-note">${esc(n)}</p>`).join("")}
       <div>
         <h2 class="section-title">Elige tu parada <span class="muted">· ${stops.length} paradas, ${path.length_km} km</span></h2>
         <div class="list" style="margin-top:6px">
@@ -205,7 +206,9 @@ export class ArrivalsPane {
             ? `<span class="num is-now">Mañana</span><span class="unit">${esc(eta.next_departures?.[0]?.departure_time?.slice(0, 5) || "")}</span>`
             : minutes < 1
               ? `<span class="num is-now" data-num>Llegando</span>`
-              : `<span class="num" data-num>${Math.round(minutes)}</span><span class="unit">min</span>`}
+              : minutes >= 60
+                ? `<span class="num">${clockIn(minutes)}</span><span class="unit">en ${minutesText(minutes)}</span>`
+                : `<span class="num" data-num>${Math.round(minutes)}</span><span class="unit">min</span>`}
         </div>
         ${!tomorrow && lo != null && hi != null ? `
           <div class="range">

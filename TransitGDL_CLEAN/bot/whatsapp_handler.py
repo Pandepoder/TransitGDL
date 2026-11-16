@@ -10,6 +10,7 @@ from enum import Enum
 from typing import Optional
 
 from core.config import CONFIG
+from core.intents import parse_route_at_stop
 from core.models import Incident, IncidentSeverity
 
 logger = logging.getLogger(__name__)
@@ -198,23 +199,6 @@ class ConversationHandler:
             await self._save_session(sender, session)
             return "No entendí tu mensaje.\n\n" + self._menu()
 
-        # --- CHEAT CODE PARA EL HACKATHON (solo en desarrollo) ---
-        if lower.startswith("dev bus") and CONFIG.environment != "production":
-            route = text.split(" ", 2)[-1].strip().upper()
-            from core.models import BusPosition
-
-            # Creamos un camión falso cerca de la Glorieta Minerva
-            fake_bus = BusPosition(
-                vehicle_id=f"DEMO_{route}",
-                route_id=route,
-                lat=20.6695,
-                lon=-103.3870,
-                speed_kmh=45.0,
-            )
-            await self.engine._gps.update(fake_bus)
-            return f"🛠️ [DEV MODE] Camión inyectado mágicamente en la ruta {route} a 45 km/h. Pide tu ETA ahora."
-        # -----------------------------------------------------------
-
         if lower in {"0", "reset", "reiniciar", "menu", "menú"}:
             await self._reset_session(sender)
             return "Sesión reiniciada.\n\n" + self._menu()
@@ -258,8 +242,8 @@ class ConversationHandler:
             if not session.route:
                 await self._save_session(sender, session)
                 return (
-                    "No entendí la ruta. Escribe el ID o nombre, por ejemplo: "
-                    "*MACRO01_R*, *MT_L1* o *ST_L3*."
+                    "No entendí la ruta. Escribe la clave o el número de siempre, "
+                    "por ejemplo: *T15*, *231* o *L3*."
                 )
             session.state = State.AWAIT_STOP
             await self._save_session(sender, session)
@@ -316,7 +300,10 @@ class ConversationHandler:
         if lower in {"1", "eta", "tiempo", "cuanto falta"}:
             session.state = State.AWAIT_ROUTE
             await self._save_session(sender, session)
-            return "Escribe la ruta (ID o nombre), por ejemplo: *MACRO01_R* o *MT_L1*"
+            return (
+                "Escribe la ruta: la clave o el número de siempre, por ejemplo "
+                "*T15*, *231* o *L3*."
+            )
 
         if lower in {"2", "clima", "lluvia", "retrasos"}:
             await self._save_session(sender, session)
@@ -339,6 +326,22 @@ class ConversationHandler:
         if lower.startswith(("diagnostico ", "experto ")):
             await self._save_session(sender, session)
             return await self._expert_diagnosis(text.split(" ", 1)[1])
+
+        # "231 en CUCEI", "la 646 hacia Tonalá": la misma forma que entiende la web.
+        intent = parse_route_at_stop(text)
+        if intent is not None and self._route_variants(intent.route):
+            route = self._resolve_route_input(intent.route) or intent.route
+            result = await self.engine.get_eta(route, intent.stop)
+            if result:
+                session.pending_prediction_id = result.prediction_id
+                session.state = State.AWAIT_FEEDBACK
+                await self._save_session(sender, session)
+                return result.to_whatsapp_message() + "\n\n" + self._feedback_prompt()
+            await self._save_session(sender, session)
+            return (
+                f"La *{intent.route}* no pasa por *{intent.stop}* o no encontré esa "
+                "parada. Prueba con otra parada de la ruta."
+            )
 
         # Ruta sola: "646", "231", "RG_646" (no nombres de parada)
         route_only = self._resolve_route_input(text)
@@ -594,22 +597,39 @@ class ConversationHandler:
         single = gtfs.find_route(route_text)
         return [single] if single is not None else []
 
-    @staticmethod
-    def _describe_variants(variants: list) -> str:
+    def _describe_variants(self, variants: list) -> str:
         if len(variants) == 1:
             route = variants[0]
             detail = (
                 f" — {route.branch_name}" if getattr(route, "branch_name", "") else ""
             )
             return f"Ruta *{getattr(route, 'label', route.route_short_name)}*{detail}."
+        # Si los ramales comparten nombre (los dos de la 646 se llaman "Lázaro
+        # Cárdenas"), se distinguen por sus destinos.
+        names = [getattr(route, "branch_name", "") for route in variants]
+        repeated = len(set(names)) < len(names)
         lines = ["Esa ruta tiene varios ramales:"]
-        for route in variants[:5]:
-            detail = (
-                f" — {route.branch_name}" if getattr(route, "branch_name", "") else ""
+        for route, name in zip(variants[:5], names[:5], strict=False):
+            destinations = self._destinations(route) if repeated or not name else ""
+            detail = destinations or name
+            lines.append(
+                f"· *{route.route_short_name}*" + (f" — {detail}" if detail else "")
             )
-            lines.append(f"· *{route.route_short_name}*{detail}")
         lines.append("Te doy el ramal que pase por tu parada.")
         return "\n".join(lines)
+
+    def _destinations(self, route) -> str:
+        """Destinos de los sentidos principales: "Vallarta Patria ⇄ Tonalá Centro"."""
+        gtfs = getattr(self.engine, "_gtfs", None)
+        getter = getattr(gtfs, "get_patterns", None)
+        if not callable(getter):
+            return ""
+        try:
+            patterns = getter(route.route_id, main_only=True)
+        except TypeError:
+            return ""
+        headsigns = list(dict.fromkeys(p.headsign for p in patterns if p.headsign))
+        return " ⇄ ".join(headsigns)
 
     @staticmethod
     def _message_is_stop_only(text: str) -> bool:

@@ -18,11 +18,11 @@ noches con menos salidas).
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from math import ceil
 from typing import Optional
 
-from .calendar_utils import es_festivo
+from .calendar_utils import dia_del_tipo
 from .params import FLOTA
 
 
@@ -53,11 +53,7 @@ class FleetPlan:
 
 def _reference_weekday(day: date) -> date:
     """El día laboral no festivo más cercano hacia atrás (para comparar horarios)."""
-    for back in range(0, 15):
-        candidate = day - timedelta(days=back)
-        if candidate.weekday() < 5 and not es_festivo(candidate):
-            return candidate
-    return day
+    return dia_del_tipo("laboral", day)
 
 
 def _best_headway(patterns, services) -> Optional[float]:

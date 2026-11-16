@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import logging
 import re
-from datetime import datetime
+from datetime import datetime, time
 from pathlib import Path
 from typing import Optional
 
+from .calendar_utils import dia_del_tipo
 from .config import (
     CONFIG,
     DEFAULT_GTFS_PATH,
@@ -490,14 +491,24 @@ class TransitEngine:
         if route is None:
             return None
         overrides = dict(overrides or {})
+        # El día del escenario no es un hecho: cambia la fecha con la que se
+        # leen el horario, los festivos y el fin de semana.
+        dia = overrides.pop("dia", None)
         ahora = None
-        if isinstance(overrides.get("hora"), int):
-            # Escenario a otra hora: frecuencia, hora pico de la ruta y flota
-            # necesaria se calculan para esa hora, no para la actual.
-            ahora = datetime.now(GDL_TZ).replace(
-                hour=overrides["hora"], minute=0, second=0, microsecond=0
+        if dia or isinstance(overrides.get("hora"), int):
+            # Escenario en otro momento: frecuencia, hora pico de la ruta,
+            # horario reducido y flota necesaria se calculan para ese momento.
+            now = datetime.now(GDL_TZ)
+            fecha = dia_del_tipo(dia, now.date()) if dia else now.date()
+            hora = overrides.get("hora")
+            ahora = datetime.combine(
+                fecha,
+                time(hour=hora if isinstance(hora, int) else now.hour),
+                tzinfo=GDL_TZ,
             )
-        hechos, alternas = await recolectar_hechos(self, route, vehicles, ahora=ahora)
+        hechos, alternas = await recolectar_hechos(
+            self, route, vehicles, ahora=ahora, clima=overrides.get("clima")
+        )
         hechos.update(overrides)
         return self._expert.diagnosticar(
             hechos,

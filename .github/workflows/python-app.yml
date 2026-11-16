@@ -6,6 +6,12 @@ on:
   pull_request:
     branches: [main]
 
+# El proyecto vive en TransitGDL_CLEAN/; GitHub solo lee los flujos de la
+# raíz del repositorio, así que cada paso se ejecuta dentro de esa carpeta.
+defaults:
+  run:
+    working-directory: TransitGDL_CLEAN
+
 jobs:
   test:
     name: Run test suite
@@ -15,6 +21,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            TransitGDL_CLEAN/requirements.txt
+            TransitGDL_CLEAN/requirements-dev.txt
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
@@ -23,10 +33,10 @@ jobs:
         run: pytest -q
       - name: Run static analysis
         run: |
-          black --check api core tests scripts
+          black --check api core tests scripts bot
           ruff check api core tests scripts bot
       - name: Verify syntax
-        run: python -m compileall api core bot scripts tests
+        run: python -m compileall -q api core bot scripts tests
       - name: Build transit database from the official feed
         # Sin red: usa el zip incluido en el repositorio.
         run: python scripts/build_transit_db.py

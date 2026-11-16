@@ -168,7 +168,7 @@ black --check api core tests scripts
 ruff check api core tests scripts bot
 ```
 
-Las pruebas usan `tests/fixtures/gtfs_mini.zip`, un recorte del GTFS oficial con siete rutas reales (`python scripts/make_test_fixture.py` lo regenera). No hacen llamadas de red. La integración continua (`.github/workflows/python-app.yml`) corre todo lo anterior en cada push y pull request a `main`.
+Las pruebas usan `tests/fixtures/gtfs_mini.zip`, un recorte del GTFS oficial con siete rutas reales (`python scripts/make_test_fixture.py` lo regenera). No hacen llamadas de red. La integración continua (`.github/workflows/python-app.yml`, en la raíz del repositorio, que es donde GitHub la busca) corre todo lo anterior dentro de `TransitGDL_CLEAN/` en cada push y pull request a `main`, y además construye la base desde el feed oficial.
 
 ---
 

@@ -54,6 +54,12 @@ class TransitEngineConfig:
     weather_longitude: float = float(os.getenv("WEATHER_LONGITUDE", "-103.3438"))
     weather_timeout_seconds: float = float(os.getenv("WEATHER_TIMEOUT_SECONDS", "5"))
     gps_position_ttl_seconds: int = int(os.getenv("GPS_POSITION_TTL_SECONDS", "30"))
+    # Hay una fuente real de posiciones GPS (no solo el simulador): si una ruta
+    # no reporta, vale la pena revisar sus equipos.
+    gps_feed_active: bool = _env_bool("GPS_FEED_ACTIVO", False)
+    # Todas las unidades reportan GPS: el conteo en vivo es la flota en servicio.
+    # Si no, el conteo GPS solo es una muestra y no se compara con la flota.
+    gps_full_coverage: bool = _env_bool("GPS_COBERTURA_COMPLETA", False)
     session_timeout_minutes: int = int(os.getenv("SESSION_TIMEOUT_MINUTES", "10"))
     use_mock_weather: bool = _env_bool("USE_MOCK_WEATHER", False)
     use_memory_cache: bool = field(default_factory=_default_use_memory_cache)

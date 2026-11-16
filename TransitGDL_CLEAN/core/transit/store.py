@@ -742,18 +742,60 @@ class TransitStore:
                 landmark.lon,
                 tuple(stop for stop, _ in near),
             )
-        matches = self.search_stops(query, limit=30)
+        groups = self.place_groups(query, limit=1)
+        return groups[0] if groups else None
+
+    def place_groups(
+        self, query: str, radius_km: float = 0.5, limit: int = 5
+    ) -> list[Place]:
+        """
+        Paradas con el nombre buscado, agrupadas por cruce: cada grupo reúne
+        las del mismo nombre a menos de `radius_km` (las dos aceras). Muchas
+        calles se repiten en la ciudad ("Morelos", "Juárez"); el primer grupo
+        es el que mejor responde a la búsqueda.
+        """
+        matches = self.search_stops(query, limit=60)
         if not matches:
+            return []
+        top_name = self._normalize(matches[0].stop_name)
+        groups: list[list[Stop]] = []
+        for stop in matches:
+            if self._normalize(stop.stop_name) != top_name:
+                continue
+            for group in groups:
+                anchor = group[0]
+                if (
+                    haversine_km(stop.lat, stop.lon, anchor.lat, anchor.lon)
+                    <= radius_km
+                ):
+                    group.append(stop)
+                    break
+            else:
+                groups.append([stop])
+        return [
+            Place(
+                group[0].stop_name, "parada", group[0].lat, group[0].lon, tuple(group)
+            )
+            for group in groups[:limit]
+        ]
+
+    def place_from_stop(self, stop_id: str, radius_km: float = 0.5) -> Optional[Place]:
+        """
+        Lugar de una parada concreta: ella y las del mismo nombre a menos de
+        `radius_km` (las dos aceras de un cruce). A diferencia de
+        `resolve_place`, no depende de qué parada homónima aparezca primero.
+        """
+        self._assert_loaded()
+        stop = self._stops.get(stop_id)
+        if stop is None:
             return None
-        top = matches[0]
-        top_name = self._normalize(top.stop_name)
-        group = tuple(
-            stop
-            for stop in matches
-            if self._normalize(stop.stop_name) == top_name
-            and haversine_km(stop.lat, stop.lon, top.lat, top.lon) <= 0.5
-        )
-        return Place(top.stop_name, "parada", top.lat, top.lon, group)
+        name = self._normalize(stop.stop_name)
+        group = [stop] + [
+            near
+            for near, _ in self.stops_near(stop.lat, stop.lon, radius_km, limit=60)
+            if near.stop_id != stop.stop_id and self._normalize(near.stop_name) == name
+        ]
+        return Place(stop.stop_name, "parada", stop.lat, stop.lon, tuple(group))
 
     def routes_at_place(self, place: Place) -> list[Route]:
         """Rutas que pasan por alguna de las paradas del lugar, en orden de catálogo."""

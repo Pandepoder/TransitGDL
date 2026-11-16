@@ -342,7 +342,8 @@ class FleetRecommendation(FlexibleModel):
     model_config = ConfigDict(extra="ignore")
 
     route_id: str
-    current_vehicles: int
+    # Flota en servicio informada; None si no hay conteo real.
+    current_vehicles: Optional[int] = None
     recommended_vehicles: int
     action: FleetAction = FleetAction.KEEP
     demand_level: str = "normal"
@@ -354,17 +355,18 @@ class FleetRecommendation(FlexibleModel):
     coverage: Optional[float] = None
 
     def summary(self) -> str:
-        if self.action == FleetAction.ADD_VEHICLES:
-            return (
-                f"Agregar {self.recommended_vehicles - self.current_vehicles} unidades"
-            )
-        if self.action == FleetAction.REDUCE_VEHICLES:
-            return (
-                f"Reducir {self.current_vehicles - self.recommended_vehicles} unidades"
-            )
+        current = self.current_vehicles
         if self.action == FleetAction.ALERT:
             return "Enviar alerta operativa"
-        return "Mantener operacion actual"
+        if current is None:
+            if self.action in (FleetAction.ADD_VEHICLES, FleetAction.REDUCE_VEHICLES):
+                return f"Operar con {self.recommended_vehicles} unidades"
+            return f"El horario pide {self.recommended_vehicles} unidades"
+        if self.action == FleetAction.ADD_VEHICLES:
+            return f"Agregar {self.recommended_vehicles - current} unidades"
+        if self.action == FleetAction.REDUCE_VEHICLES:
+            return f"Reducir {current - self.recommended_vehicles} unidades"
+        return "Mantener operación actual"
 
 
 class Incident(FlexibleModel):

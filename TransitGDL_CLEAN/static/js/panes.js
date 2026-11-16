@@ -87,6 +87,19 @@ export class RoutesPane {
 
 const LEVEL = { critica: "crítica", alta: "alta", normal: "normal", baja: "baja", critico: "crítico", degradado: "degradado" };
 
+/** Flota del diagnóstico: solo compara contra la flota en servicio si hay conteo real. */
+function fleetText(d) {
+  const rec = d.vehiculos_recomendados;
+  if (d.vehiculos_actuales != null) {
+    return rec != null && rec !== d.vehiculos_actuales ? `Flota: ${d.vehiculos_actuales} en servicio → ${rec} recomendadas` : "";
+  }
+  if (d.unidades_necesarias) {
+    const extra = rec != null && rec !== d.unidades_necesarias ? `; con la demanda actual, ${rec}` : "";
+    return `Según el horario hacen falta ${d.unidades_necesarias} unidades${extra}`;
+  }
+  return "";
+}
+
 export class ExpertPane {
   constructor(root, app) {
     this.root = root;
@@ -147,9 +160,10 @@ export class ExpertPane {
   _diagnosis(d) {
     const pct = (c) => (c == null ? "" : ` · ${Math.round(c * 100)} %`);
     const scenario = Object.keys(d.escenario || {}).length ? `<span class="badge">Escenario simulado</span>` : "";
-    const fleet = d.vehiculos_recomendados != null && d.vehiculos_recomendados !== d.vehiculos_actuales
-      ? `<p class="small" style="margin:0;color:var(--text-2)">Flota: ${d.vehiculos_actuales} en servicio → ${d.vehiculos_recomendados} recomendadas</p>`
-      : d.nota_flota ? `<p class="small" style="margin:0;color:var(--text-2)">${esc(d.nota_flota)}</p>` : "";
+    const fleet = [fleetText(d), d.nota_flota]
+      .filter(Boolean)
+      .map((text) => `<p class="small" style="margin:0;color:var(--text-2)">${esc(text)}</p>`)
+      .join("");
     return `
       <section class="card">
         <div class="level-tags">
@@ -161,6 +175,7 @@ export class ExpertPane {
         ${d.acciones.length ? d.acciones.map((a) => `
           <div class="action">
             <b>${esc(a.descripcion)}</b><span class="small muted">Certeza ${Math.round(a.certeza * 100)} %</span>
+            ${a.motivo ? `<span class="small" style="color:var(--text-2)">${esc(a.motivo)}</span>` : ""}
             <details><summary>¿Por qué?</summary><ol>${a.porque.map((p) => `<li>${esc(p)}</li>`).join("")}</ol></details>
           </div>`).join("") : `<p style="margin:0">Sin acciones: la ruta opera con normalidad.</p>`}
         <details class="small"><summary class="muted">Reglas aplicadas (${d.reglas_disparadas.length})</summary>
@@ -173,11 +188,11 @@ export class ExpertPane {
 // ── Operación ────────────────────────────────────────────────────────────────
 
 const ACTION_TEXT = {
-  add_vehicles: "Faltan unidades para la frecuencia programada",
-  reduce_vehicles: "Sobran unidades para la frecuencia actual",
+  add_vehicles: "Conviene reforzar la ruta",
+  reduce_vehicles: "Se pueden retirar unidades y reasignarlas",
   keep: "La flota alcanza para la frecuencia programada",
   alert: "Alerta operativa: la demanda es crítica",
-  monitor: "Sin conteo de unidades suficiente para evaluar",
+  monitor: "Sin datos suficientes para evaluar la flota",
 };
 const SEVERITY = [["low", "Baja"], ["medium", "Media"], ["high", "Alta"], ["critical", "Crítica"]];
 
@@ -237,22 +252,32 @@ export class OpsPane {
     }
   }
 
-  async _fleet() {
+  /**
+   * Flota de la ruta. Las unidades del mapa son una muestra (las que reportan
+   * GPS), así que solo se compara contra la flota si el operador la escribe.
+   */
+  async _fleet(inService = null) {
     const route = this.app.selectedRoute;
     const box = this.root.querySelector("#ops-fleet");
     if (!route || !box) return;
     const live = this.app.liveCount(route.route_id);
     try {
-      const f = await api.fleet(route.route_id, live);
+      const f = await api.fleet(route.route_id, inService);
       box.innerHTML = `
         <h2 class="section-title">Flota de ${esc(route.label || route.short_name)}</h2>
         <div class="facts">
-          <span class="fact"><span class="k">Necesarias</span><span class="v">${f.recommended_vehicles}</span></span>
-          <span class="fact"><span class="k">En el mapa</span><span class="v">${live}</span></span>
+          <span class="fact"><span class="k">${inService == null ? "Recomendadas" : "En servicio → recomendadas"}</span><span class="v">${inService == null ? f.recommended_vehicles : `${inService} → ${f.recommended_vehicles}`}</span></span>
+          <span class="fact"><span class="k">Con GPS en el mapa</span><span class="v">${live}</span></span>
           <span class="fact"><span class="k">Pasa cada</span><span class="v">${f.headway_minutes ? `${f.headway_minutes} min` : "—"}</span></span>
         </div>
         <p style="margin:0">${esc(ACTION_TEXT[f.action] || "")}</p>
-        <p class="small muted" style="margin:0">${esc(f.rationale)}. En la demostración el mapa muestra una muestra de unidades simuladas, no la flota completa.</p>`;
+        <p class="small muted" style="margin:0">${esc(f.rationale)}.</p>
+        <form id="ops-fleet-count" class="btn-row">
+          <label class="field" style="flex:1">Unidades en servicio (opcional)
+            <input name="count" type="number" min="0" max="500" inputmode="numeric" value="${inService ?? ""}" placeholder="Conteo del operador">
+          </label>
+          <button type="submit" class="btn btn--sm">Comparar</button>
+        </form>`;
     } catch (error) {
       box.innerHTML = `<p class="alert">${esc(error.message)}</p>`;
     }
@@ -301,6 +326,10 @@ export class OpsPane {
     event.preventDefault();
     const form = event.target;
     const data = new FormData(form);
+    if (form.id === "ops-fleet-count") {
+      const raw = String(data.get("count") || "").trim();
+      return this._fleet(raw === "" ? null : Math.max(0, Math.round(Number(raw))));
+    }
     const body = {
       description: String(data.get("description") || "").trim(),
       affected_routes: [String(data.get("route"))],

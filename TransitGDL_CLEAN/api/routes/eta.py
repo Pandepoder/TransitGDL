@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Optional
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from api.deps import get_engine, get_locale
@@ -52,13 +54,26 @@ async def eta_options(
 
 @router.get("/arrivals", summary="Próximas llegadas en una parada o lugar")
 async def eta_arrivals(
-    place: str = Query(..., min_length=2, max_length=120),
+    place: Optional[str] = Query(None, min_length=2, max_length=120),
+    stop_id: Optional[str] = Query(
+        None,
+        min_length=1,
+        max_length=64,
+        pattern=r"^[A-Za-z0-9_.:-]+$",
+        description="Parada exacta (de /search); evita confundir paradas homónimas",
+    ),
     limit: int = Query(12, ge=1, le=30),
     locale: str = Depends(get_locale),
 ):
     """Todas las rutas que pasan por la parada o cerca del lugar, la más próxima primero."""
+    if not place and not stop_id:
+        raise HTTPException(
+            status_code=400, detail=t("errors.invalid_stop", locale=locale)
+        )
     engine = get_engine()
-    result = await engine.get_arrivals(place.strip(), limit=limit)
+    result = await engine.get_arrivals(
+        place.strip() if place else None, limit=limit, stop_id=stop_id
+    )
     if result is None:
         raise HTTPException(
             status_code=404, detail=t("errors.stop_not_found", locale=locale)

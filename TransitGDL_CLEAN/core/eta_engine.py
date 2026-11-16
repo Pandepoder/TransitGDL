@@ -100,8 +100,12 @@ class ETAEngine:
         *,
         incidents: Optional[list[Incident]] = None,
         now: Optional[datetime] = None,
+        stops: Optional[list[Stop]] = None,
     ) -> list[ETAResult]:
-        """Una estimación por sentido (y por ramal) que pase por la parada."""
+        """
+        Una estimación por sentido (y por ramal) que pase por la parada. Con
+        `stops` se usan esas paradas físicas en lugar de buscar `stop` por texto.
+        """
         state = await self.weather.get_current_state()
         return self.estimate_options(
             route,
@@ -110,6 +114,7 @@ class ETAEngine:
             state,
             incidents or [],
             now or datetime.now(GDL_TZ),
+            stops=stops,
         )
 
     def estimate_options(
@@ -120,11 +125,18 @@ class ETAEngine:
         state: WeatherState,
         incidents: list[Incident],
         now: datetime,
+        *,
+        stops: Optional[list[Stop]] = None,
     ) -> list[ETAResult]:
         """Versión síncrona y sin red de `get_eta_options` (la usa la evaluación)."""
         results: list[ETAResult] = []
         for route_obj in self.candidate_routes(route)[:MAX_ROUTE_VARIANTS]:
-            for boarding in self.resolve_boardings(route_obj, stop):
+            boardings = (
+                self._boardings_at(route_obj, stops)
+                if stops is not None
+                else self.resolve_boardings(route_obj, stop)
+            )
+            for boarding in boardings:
                 result = self.estimate(
                     route_obj, boarding, positions, state, incidents, now
                 )

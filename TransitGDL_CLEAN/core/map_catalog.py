@@ -79,7 +79,11 @@ def build_route_catalog(
 
 
 def pattern_geometry(store: TransitStore, pattern, *, encoded: bool) -> dict[str, Any]:
-    """Trazo de un patrón para el mapa: polilínea codificada o lista [lon, lat]."""
+    """
+    Trazo de un patrón para el mapa. Siempre lleva la polilínea codificada (la
+    que registra el mapa para dibujar y animar); sin `encoded`, además la lista
+    de coordenadas [lon, lat].
+    """
     payload: dict[str, Any] = {
         "pattern_id": pattern.pattern_id,
         "route_id": pattern.route_id,
@@ -90,10 +94,11 @@ def pattern_geometry(store: TransitStore, pattern, *, encoded: bool) -> dict[str
         "length_m": round(pattern.length_m, 1),
         # El feed no trae un trazo confiable: se unieron las paradas.
         "approximate": pattern.shape_source == "paradas",
+        # Avisos sobre la calidad de los datos oficiales de este recorrido.
+        "notes": pattern.notes,
+        "polyline": pattern.map_polyline,
     }
-    if encoded:
-        payload["polyline"] = pattern.map_polyline
-    else:
+    if not encoded:
         payload["coordinates"] = store.map_coordinates(pattern)
     return payload
 

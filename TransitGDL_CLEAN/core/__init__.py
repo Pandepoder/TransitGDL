@@ -24,6 +24,7 @@ from .models import (
     BusPosition,
     DemandSnapshot,
     ETAResult,
+    FleetAction,
     FleetRecommendation,
     Incident,
     Route,
@@ -37,6 +38,14 @@ from .weather_client import WeatherClient
 logger = logging.getLogger(__name__)
 
 __all__ = ["TransitEngine"]
+
+# Nivel de demanda del sistema experto → código de la API de flota.
+_NIVEL_A_DEMANDA = {
+    "critica": "critical",
+    "alta": "high",
+    "normal": "normal",
+    "baja": "low",
+}
 
 
 class TransitEngine:
@@ -67,6 +76,22 @@ class TransitEngine:
         if self._simulator is None:
             return 0
         return self._simulator.vehicle_count
+
+    def gps_expected(self, route_id: str) -> bool:
+        """
+        ¿La ruta debería reportar posiciones? Sí con una fuente GPS real, o en
+        la demostración si el simulador la cubre. Sin fuente, que no haya
+        unidades en el mapa no indica una falla.
+        """
+        if self.config.gps_feed_active:
+            return True
+        if self._simulator is not None:
+            return route_id in self._simulator.route_ids
+        return False
+
+    def fleet_count_from_gps(self) -> bool:
+        """El conteo GPS es la flota en servicio solo con cobertura completa y real."""
+        return self.config.gps_full_coverage and self._simulator is None
 
     async def initialize(self) -> "TransitEngine":
         logger.info("Iniciando TransitEngine...")
@@ -185,11 +210,13 @@ class TransitEngine:
         live_positions: Optional[list[BusPosition]] = None,
         *,
         save: bool = True,
+        stops: Optional[list] = None,
     ) -> list[ETAResult]:
         """
         Una estimación por cada sentido (y ramal) de la ruta que pasa por la
         parada, la que llega primero al inicio. Con `save` las predicciones se
-        guardan para poder calificarlas después.
+        guardan para poder calificarlas después. Con `stops` se usan esas
+        paradas físicas en lugar de buscar `stop` por nombre.
         """
         self._assert_initialized()
         routes = self._eta.candidate_routes(route)[:6]
@@ -208,7 +235,7 @@ class TransitEngine:
                     incidents.append(incident)
 
         options = await self._eta.get_eta_options(
-            route, stop, live_positions, incidents=incidents
+            route, stop, live_positions, incidents=incidents, stops=stops
         )
         catalog_note = self._gtfs.catalog_note(route)
         if catalog_note:
@@ -220,20 +247,34 @@ class TransitEngine:
                 self._save_prediction(result, now)
         return options
 
-    async def get_arrivals(self, place_query: str, limit: int = 12) -> Optional[dict]:
+    async def get_arrivals(
+        self,
+        place_query: Optional[str] = None,
+        limit: int = 12,
+        *,
+        stop_id: Optional[str] = None,
+    ) -> Optional[dict]:
         """
         Próximas llegadas de todas las rutas en una parada o lugar: la mejor
-        opción de cada ruta y sentido, la más próxima primero. None si el
-        lugar no existe.
+        opción de cada ruta y sentido, la más próxima primero. Con `stop_id`
+        se usa esa parada exacta (y su acera de enfrente), sin importar que
+        otras paradas se llamen igual. None si el lugar no existe.
         """
         self._assert_initialized()
-        place = self._gtfs.resolve_place(place_query)
+        if stop_id:
+            place = self._gtfs.place_from_stop(stop_id)
+        else:
+            place = self._gtfs.resolve_place(place_query or "")
         if place is None:
             return None
+        # En una parada se calcula sobre sus paradas físicas; en un lugar
+        # ("CUCEI") se buscan las paradas cercanas de cada ruta, con la
+        # distancia a pie.
+        stops = list(place.stops) if place.kind == "parada" else None
         arrivals: list[ETAResult] = []
         for route in self._gtfs.routes_at_place(place)[:24]:
             options = await self.get_eta_options(
-                route.route_id, place_query, save=False
+                route.route_id, place_query or place.name, save=False, stops=stops
             )
             arrivals.extend(o for o in options if o.route_id == route.route_id)
         arrivals.sort(key=lambda r: (r.service_day_offset, r.estimated_minutes))
@@ -343,15 +384,77 @@ class TransitEngine:
         return await self._demand.get_demand_snapshot(route_id, current_vehicles)
 
     async def get_fleet_recommendation(
-        self, route_id: str, current_vehicles: int
+        self, route_id: str, current_vehicles: Optional[int] = None
     ) -> FleetRecommendation:
         """
-        Unidades que la ruta necesita para sostener su frecuencia programada
-        (tiempo de ciclo ÷ frecuencia) frente a las que tiene en servicio.
+        Unidades que la ruta necesita (tiempo de ciclo ÷ frecuencia) y qué
+        hacer con su flota. La decisión, la cifra y el motivo salen del
+        sistema experto, para que Operación y Experto nunca se contradigan.
+        `current_vehicles` es la flota en servicio que informa el operador;
+        sin ella no se compara contra ningún conteo.
         """
         self._assert_initialized()
-        snapshot = await self._demand.get_demand_snapshot(route_id, current_vehicles)
-        return self._demand.get_fleet_recommendation(snapshot)
+        snapshot = await self._demand.get_demand_snapshot(
+            route_id, current_vehicles or 0
+        )
+        diagnostico = await self.diagnose_route(route_id, vehicles=current_vehicles)
+        if diagnostico is None:
+            recommendation = self._demand.get_fleet_recommendation(snapshot)
+            recommendation.current_vehicles = current_vehicles
+            return recommendation
+
+        acciones = {accion.id for accion in diagnostico.acciones}
+        if "emitir_alerta_operativa" in acciones:
+            action = FleetAction.ALERT
+        elif diagnostico.decision_flota == "agregar":
+            action = FleetAction.ADD_VEHICLES
+        elif diagnostico.decision_flota == "reducir":
+            action = FleetAction.REDUCE_VEHICLES
+        elif current_vehicles is None and not diagnostico.unidades_necesarias:
+            action = FleetAction.MONITOR
+        else:
+            action = FleetAction.KEEP
+
+        necesarias = diagnostico.unidades_necesarias or 0
+        recommended = diagnostico.vehiculos_recomendados
+        if recommended is None:
+            recommended = necesarias or (current_vehicles or 0)
+        partes = []
+        if snapshot.headway_minutes and snapshot.cycle_minutes:
+            partes.append(
+                f"Pasa cada {snapshot.headway_minutes:g} min, ciclo de "
+                f"{snapshot.cycle_minutes:g} min → {necesarias} unidades necesarias"
+            )
+        else:
+            partes.append("Sin servicio programado a esta hora")
+        if current_vehicles is not None and snapshot.coverage is not None:
+            partes.append(f"cobertura {round(snapshot.coverage * 100)} %")
+        # Frases sin punto final: la interfaz cierra el texto completo.
+        if diagnostico.motivo_flota:
+            partes.append(diagnostico.motivo_flota.rstrip("."))
+        if diagnostico.nota_flota:
+            partes.append(diagnostico.nota_flota.rstrip("."))
+        factor = next(
+            (
+                float(h["valor"])
+                for h in diagnostico.hechos_derivados
+                if h["hecho"] == "factor_flota"
+            ),
+            1.0,
+        )
+        return FleetRecommendation(
+            route_id=diagnostico.route_id or route_id,
+            current_vehicles=current_vehicles,
+            recommended_vehicles=recommended,
+            action=action,
+            demand_level=_NIVEL_A_DEMANDA.get(diagnostico.nivel_demanda, "normal"),
+            rationale=" · ".join(partes),
+            weather_condition=snapshot.weather_condition,
+            demand_factor=factor,
+            headway_minutes=snapshot.headway_minutes,
+            cycle_minutes=snapshot.cycle_minutes,
+            coverage=snapshot.coverage if current_vehicles is not None else None,
+        )
 
     @property
     def expert(self) -> SistemaExperto:
@@ -537,6 +640,10 @@ class TransitEngine:
         place = self._gtfs.resolve_place(stop_query)
         if place is None:
             return "No encontré esa parada."
+        if place.kind == "parada":
+            groups = self._gtfs.place_groups(stop_query, limit=4)
+            if len(groups) > 1:
+                return self._describe_homonyms(groups)
         routes = self._gtfs.routes_at_place(place)
         if not routes:
             return f"No encontré rutas activas para *{place.name}*."
@@ -550,6 +657,26 @@ class TransitEngine:
             else f"En *{place.name}*"
         )
         return f"{where} pasan: {listing}"
+
+    def _describe_homonyms(self, groups: list) -> str:
+        """Varias paradas con el mismo nombre en distintos puntos: se listan por sus rutas."""
+        name = groups[0].name
+        lines = [f"Hay varias paradas llamadas *{name}*. Las rutas de cada una:"]
+        example = None
+        for place in groups[:3]:
+            routes = self._gtfs.routes_at_place(place)
+            if not routes:
+                continue
+            example = example or routes[0].display_name
+            shown = ", ".join(route.label for route in routes[:4])
+            more = len(routes) - 4
+            lines.append(f"· {shown}" + (f" y {more} más" if more > 0 else ""))
+        if example:
+            lines.append(
+                "Para el tiempo de llegada escribe la ruta y la parada, por ejemplo: "
+                f"*¿Cuánto falta la {example} en {name}?*"
+            )
+        return "\n".join(lines)
 
     async def _handle_weather_query(self) -> str:
         state = await self._weather.get_current_state()

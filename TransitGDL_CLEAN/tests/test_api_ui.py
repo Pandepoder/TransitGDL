@@ -22,7 +22,7 @@ def client(engine, monkeypatch):
     startup.close = AsyncMock()
     startup.cache_backend = "memory"
     monkeypatch.setattr("api.main.get_engine", lambda: startup)
-    for module in ("map", "eta", "search"):
+    for module in ("map", "eta", "search", "fleet"):
         monkeypatch.setattr(f"api.routes.{module}.get_engine", lambda: engine)
     with TestClient(app) as test_client:
         yield test_client
@@ -91,6 +91,56 @@ def test_bootstrap_sends_encoded_shapes_and_style(client):
     assert "coordinates" not in path and path["length_m"] > 20000
     lon, lat = decode_polyline(path["polyline"])[0][::-1]
     assert 20 < lat < 21 and -104 < lon < -103
+
+
+def test_route_detail_sends_polyline_for_every_route(client):
+    """El mapa solo puede dibujar y encuadrar una ruta si su detalle trae el trazo codificado."""
+    for route in client.get("/map/network").json()["routes"]:
+        detail = client.get(f"/map/routes/{route['route_id']}/detail").json()
+        for path in detail["paths"]:
+            points = decode_polyline(path["polyline"])
+            assert len(points) >= 2, route["route_id"]
+            assert isinstance(path["notes"], list)
+
+
+def test_arrivals_by_stop_id_open_that_exact_stop(client):
+    """Con varias paradas del mismo nombre, cada resultado abre la suya."""
+    groups = client.get("/search", params={"q": "Revolucion", "limit": 10}).json()[
+        "stops"
+    ]
+    assert len(groups) >= 2
+    places = []
+    for group in groups:
+        body = client.get("/eta/arrivals", params={"stop_id": group["stop_id"]}).json()
+        place = body["place"]
+        assert group["stop_id"] in place["stop_ids"]
+        assert (place["lat"], place["lon"]) == (group["lat"], group["lon"])
+        for arrival in body["arrivals"]:
+            assert arrival["stop_id"] in place["stop_ids"]
+        places.append((place["lat"], place["lon"]))
+    assert len(set(places)) == len(groups)
+
+    assert client.get("/eta/arrivals", params={"stop_id": "NOPE"}).status_code == 404
+    assert client.get("/eta/arrivals").status_code == 400
+
+
+def test_fleet_without_a_count_reports_what_the_schedule_needs(client):
+    plain = client.get("/fleet/recommend", params={"route_id": "231"}).json()
+    assert plain["current_vehicles"] is None
+    assert plain["coverage"] is None
+    assert plain["recommended_vehicles"] > 0
+    assert "unidades necesarias" in plain["rationale"]
+    assert plain["action"] != "add_vehicles" or plain["demand_level"] in (
+        "high",
+        "critical",
+    )
+
+    short = client.get(
+        "/fleet/recommend", params={"route_id": "231", "vehicles": 1}
+    ).json()
+    assert short["current_vehicles"] == 1
+    assert short["action"] == "add_vehicles"
+    assert short["coverage"] < 0.75
 
 
 def test_bootstrap_is_compressed(client):

@@ -25,6 +25,7 @@ HECHOS_NORMALES = {
     "es_festivo": False,
     "tipo_ruta": 3,
     "vehiculos_en_ruta": 4,
+    "unidades_en_servicio": 4,
     "frecuencia_min": 12,
     "incidentes_activos": 0,
     "hay_ruta_alterna": True,
@@ -343,7 +344,7 @@ def test_hora_pico_que_el_horario_ya_cubre_no_duplica_la_flota(experto):
             frecuencia_min=5,
             es_hora_pico_ruta=True,
             unidades_necesarias=20,
-            vehiculos_en_ruta=20,
+            unidades_en_servicio=20,
             cobertura_flota=1.0,
         )
     )
@@ -359,7 +360,7 @@ def test_hora_pico_que_el_horario_ya_cubre_no_duplica_la_flota(experto):
             frecuencia_min=5,
             es_hora_pico_ruta=True,
             unidades_necesarias=20,
-            vehiculos_en_ruta=20,
+            unidades_en_servicio=20,
             cobertura_flota=1.0,
         )
     )
@@ -375,7 +376,7 @@ def test_la_hora_pico_de_la_ruta_manda_sobre_el_reloj(experto):
             hora=20,
             es_hora_pico_ruta=False,
             unidades_necesarias=3,
-            vehiculos_en_ruta=8,
+            unidades_en_servicio=8,
             cobertura_flota=2.67,
         )
     )
@@ -392,6 +393,7 @@ def test_ruta_sin_servicio_solo_informa(experto):
             hora=19,
             clima="rain",
             vehiculos_en_ruta=0,
+            unidades_en_servicio=0,
             frecuencia_min=None,
             sin_servicio_programado=True,
         )
@@ -415,7 +417,7 @@ def test_la_cifra_de_flota_coincide_con_la_accion(experto):
             hora=9,
             clima="rain",
             unidades_necesarias=6,
-            vehiculos_en_ruta=12,
+            unidades_en_servicio=12,
             cobertura_flota=2.0,
         )
     )
@@ -439,7 +441,7 @@ def test_barrido_sin_acciones_de_flota_contradictorias(experto):
             es_fin_de_semana=rng.random() < 0.3,
             frecuencia_min=rng.choice([4, 6, 10, 15, 25]),
             unidades_necesarias=necesarias,
-            vehiculos_en_ruta=actuales,
+            unidades_en_servicio=actuales,
             cobertura_flota=round(actuales / necesarias, 2),
         )
         if rng.random() < 0.4:
@@ -451,6 +453,37 @@ def test_barrido_sin_acciones_de_flota_contradictorias(experto):
             assert d.vehiculos_recomendados > actuales, hechos
         if "reducir_unidades" in ids:
             assert d.vehiculos_recomendados < actuales, hechos
+
+
+def test_sin_conteo_de_flota_no_se_compara_con_el_gps(experto):
+    # Ninguna unidad reporta GPS y no hay conteo del operador: no es "flota 0".
+    hechos = _hechos(frecuencia_min=6, unidades_necesarias=20, vehiculos_en_ruta=0)
+    del hechos["unidades_en_servicio"]
+    d = experto.diagnosticar(hechos)
+    assert d.vehiculos_actuales is None
+    assert d.vehiculos_con_gps == 0
+    assert d.decision_flota is None
+    assert d.acciones == []
+    assert d.vehiculos_recomendados == 20
+    assert "Según el horario hacen falta 20 unidades" in d.to_chat_message()
+    assert "en servicio" not in d.to_chat_message()
+
+
+def test_gps_solo_se_revisa_cuando_la_ruta_deberia_reportar(experto):
+    base = _hechos(hora=8, vehiculos_en_ruta=0)
+    sin_fuente = experto.diagnosticar({**base, "gps_esperado": False})
+    con_fuente = experto.diagnosticar({**base, "gps_esperado": True})
+    assert "verificar_gps" not in [a.id for a in sin_fuente.acciones]
+    assert "verificar_gps" in [a.id for a in con_fuente.acciones]
+
+
+def test_el_motivo_explica_la_decision_y_no_su_traduccion(experto):
+    d = experto.diagnosticar(_hechos(hora=8))
+    agregar = next(a for a in d.acciones if a.id == "agregar_unidades")
+    r47 = next(r for r in experto.base.reglas if r.id == "R47")
+    assert agregar.motivo == r47.explicacion
+    assert d.motivo_flota == r47.explicacion
+    assert f"Porque: {r47.explicacion}" in d.to_chat_message()
 
 
 def test_por_que_no_explica_lo_que_falto(experto):
@@ -521,7 +554,9 @@ def test_incidencia_grave_sugiere_ruta_alterna_y_aviso(experto):
 
 
 def test_baja_demanda_con_mucha_frecuencia_retira_unidades(experto):
-    d = experto.diagnosticar(_hechos(hora=23, frecuencia_min=6, vehiculos_en_ruta=10))
+    d = experto.diagnosticar(
+        _hechos(hora=23, frecuencia_min=6, unidades_en_servicio=10)
+    )
     assert d.nivel_demanda == "baja"
     assert "reducir_unidades" in [a.id for a in d.acciones]
     assert d.vehiculos_recomendados == 9
@@ -567,6 +602,22 @@ def test_explicacion_incluye_hechos_y_reglas(experto):
 # ── Integración con TransitEngine ────────────────────────────────────────────
 
 
+def test_diagnose_route_sin_gps_ni_conteo_no_pide_unidades(engine):
+    """Sin fuente GPS ni conteo del operador, no hay "flota insuficiente"."""
+    engine._weather.set_demo_override(WeatherCondition.CLEAR)
+    try:
+        for ruta in engine._gtfs.get_routes():
+            d = asyncio.run(engine.diagnose_route(ruta.route_id))
+            derivados = {h["hecho"] for h in d.hechos_derivados}
+            assert "cobertura_flota" not in d.hechos_iniciales
+            assert d.hechos_iniciales["gps_esperado"] is False
+            assert "flota_insuficiente" not in derivados
+            assert "sin_cobertura_gps" not in derivados
+            assert d.vehiculos_actuales is None
+    finally:
+        engine._weather.clear_demo_override()
+
+
 def test_diagnose_route_con_motor_real(engine):
     engine._weather.set_demo_override(WeatherCondition.CLEAR)
     try:
@@ -576,7 +627,10 @@ def test_diagnose_route_con_motor_real(engine):
         )
         assert d.route_id == ruta.route_id
         assert d.hechos_iniciales["clima"] == "clear"
-        assert d.hechos_iniciales["vehiculos_en_ruta"] == 3
+        # `vehicles` es la flota que informa el operador; el GPS se cuenta aparte.
+        assert d.hechos_iniciales["unidades_en_servicio"] == 3
+        assert d.vehiculos_actuales == 3
+        assert "vehiculos_en_ruta" in d.hechos_iniciales
         assert "tipo_ruta" in d.hechos_iniciales
 
         engine.report_incident(

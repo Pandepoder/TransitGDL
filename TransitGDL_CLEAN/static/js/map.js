@@ -224,11 +224,11 @@ export class TransitMap {
 
   // ── Datos ─────────────────────────────────────────────────────────────────
 
-  /** Registra trazos (polilíneas codificadas) para dibujarlos y animar unidades. */
+  /** Registra trazos (polilínea codificada o coordenadas [lon, lat]) para dibujarlos y animar unidades. */
   registerPaths(paths, color) {
     for (const p of paths) {
-      if (this.patterns.has(p.pattern_id) || !p.polyline) continue;
-      const coords = decodePolyline(p.polyline);
+      if (this.patterns.has(p.pattern_id)) continue;
+      const coords = p.polyline ? decodePolyline(p.polyline) : p.coordinates || [];
       if (coords.length < 2) continue;
       this.patterns.set(p.pattern_id, {
         route_id: p.route_id,

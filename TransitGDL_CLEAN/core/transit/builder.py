@@ -54,6 +54,8 @@ CANDIDATE_RADIUS_M = 150.0  # pasadas del trazo que se consideran para cada para
 # otro identificador, en el mismo punto y a la misma hora.
 TWIN_STOP_M = 30.0
 TWIN_STOP_MAX_GAP_S = 5
+# Recorridos duplicados: el mismo viaje con otros identificadores de parada.
+DUPLICATE_PATTERN_M = 50.0
 
 # Velocidad máxima creíble entre dos paradas consecutivas (m/s).
 MAX_SPEED_MS = {"tren": 100 / 3.6}
@@ -265,6 +267,7 @@ class BuildReport:
     segments_repaired: int = 0
     stops_far_from_shape: int = 0
     twin_stops_merged: int = 0
+    duplicate_patterns_merged: int = 0
     speeds_corrected: int = 0
     patterns_with_issues: dict[str, int] = field(default_factory=dict)
     catalog_aliases: int = 0
@@ -292,7 +295,8 @@ class BuildReport:
             + f"; {self.shapes_reassigned} tomados de otro sentido o invertidos)",
             f"Paradas por patrón: {self.pattern_stops} "
             f"(a más de 80 m del trazo: {self.stops_far_from_shape}; "
-            f"andenes duplicados fusionados: {self.twin_stops_merged})",
+            f"andenes duplicados fusionados: {self.twin_stops_merged}; "
+            f"recorridos duplicados fusionados: {self.duplicate_patterns_merged})",
             "Recorridos con defectos del feed: "
             + (
                 ", ".join(
@@ -777,6 +781,9 @@ def build_transit_db(
                 p["headsign"],
                 p["shape_id"],
             )
+        )
+        report.duplicate_patterns_merged += _merge_duplicate_patterns(
+            built, stop_info, route_id, report
         )
         if frequency_based:
             _fill_service_gaps(built, service_days, report)
@@ -1297,6 +1304,67 @@ def _within(
         return False
     dx = (lon - zone_lon) * METERS_PER_DEGREE * 0.936  # cos(20.6°)
     return dx * dx + dy * dy <= radius_m * radius_m
+
+
+def _merge_duplicate_patterns(
+    built: list[dict[str, Any]],
+    stop_info: dict[str, tuple[str, float, float]],
+    route_id: str,
+    report: BuildReport,
+) -> int:
+    """
+    Fusiona recorridos que el feed repite con otros identificadores de parada
+    (SiTren trae cada línea dos veces): mismo sentido, mismo destino, mismo
+    número de paradas y cada parada a menos de `DUPLICATE_PATTERN_M` de su par.
+    Se conserva el primero (el de más servicio) y se unen sus horarios. Si los
+    horarios se enciman con frecuencias distintas no son el mismo servicio y se
+    dejan separados. Devuelve cuántos recorridos se fusionaron.
+    """
+    kept: list[dict[str, Any]] = []
+    merged = 0
+    for pattern in built:
+        twin = next((k for k in kept if _same_trip(k, pattern, stop_info)), None)
+        if twin is None:
+            kept.append(pattern)
+            continue
+        if _windows_conflict(twin["windows"], pattern["windows"]):
+            report.warnings.append(
+                f"{route_id}: recorridos idénticos hacia {pattern['headsign']} con "
+                "horarios distintos; se conservan los dos."
+            )
+            kept.append(pattern)
+            continue
+        twin["windows"] = sorted(set(twin["windows"]) | set(pattern["windows"]))
+        merged += 1
+    built[:] = kept
+    return merged
+
+
+def _same_trip(
+    a: dict[str, Any], b: dict[str, Any], stop_info: dict[str, tuple[str, float, float]]
+) -> bool:
+    if a["direction"] != b["direction"] or a["headsign"] != b["headsign"]:
+        return False
+    if len(a["stop_ids"]) != len(b["stop_ids"]) or a["stop_ids"] == b["stop_ids"]:
+        return False
+    return all(
+        _planar_m(*stop_info[x][1:], *stop_info[y][1:]) <= DUPLICATE_PATTERN_M
+        for x, y in zip(a["stop_ids"], b["stop_ids"], strict=True)
+    )
+
+
+def _windows_conflict(
+    first: list[tuple[str, int, int, int, int]],
+    second: list[tuple[str, int, int, int, int]],
+) -> bool:
+    """¿Hay ventanas del mismo servicio que se enciman con distinta frecuencia?"""
+    for service_a, start_a, end_a, headway_a, _ in first:
+        for service_b, start_b, end_b, headway_b, _ in second:
+            if service_a != service_b or headway_a == headway_b:
+                continue
+            if start_a < max(end_b, start_b + 1) and start_b < max(end_a, start_a + 1):
+                return True
+    return False
 
 
 def _is_twin_stop(

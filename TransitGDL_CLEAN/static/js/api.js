@@ -32,7 +32,8 @@ export const api = {
   nearby: (lat, lon) => get("/map/nearby", { lat, lon, radius_km: 0.8, limit: 8 }),
   routeDetail: (routeId) => get(`/map/routes/${encodeURIComponent(routeId)}/detail`),
   search: (text) => get("/search", { q: text, limit: 6 }),
-  arrivals: (place) => get("/eta/arrivals", { place, limit: 14 }),
+  // Con `stopId` se piden las llegadas de esa parada exacta (hay muchas homónimas).
+  arrivals: (place, stopId) => get("/eta/arrivals", stopId ? { stop_id: stopId, limit: 14 } : { place, limit: 14 }),
   options: (route, stop) => get("/eta/options", { route, stop }),
   feedback: (predictionId, rating) => post("/feedback/", { prediction_id: predictionId, rating }),
   diagnose: (routeId, clima, hora) => get("/expert/diagnose", { route_id: routeId, clima, hora }),

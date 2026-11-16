@@ -147,14 +147,15 @@ const app = {
     }
   },
 
-  async openPlace(query) {
+  /** Llegadas en un lugar o parada. Con `stopId`, esa parada exacta (hay muchas homónimas). */
+  async openPlace(query, { stopId = null } = {}) {
     const mine = ++this.ticket;
     search.setText(query);
     showTab("arrivals");
     arrivals.loading();
     sheet.open(1);
     try {
-      const data = await api.arrivals(query);
+      const data = await api.arrivals(query, stopId);
       if (mine !== this.ticket) return;
       this.stopQuery = null;
       this.selectedRoute = null;
@@ -253,7 +254,7 @@ const search = initSearch({
       return app.selectRoute(item.route_id);
     }
     if (item.kind === "place") return app.openPlace(item.name);
-    return app.openPlace(item.stop_name);
+    return app.openPlace(item.stop_name, { stopId: item.stop_id });
   },
 });
 

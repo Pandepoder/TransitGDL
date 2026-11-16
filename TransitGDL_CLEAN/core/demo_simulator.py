@@ -166,6 +166,11 @@ class FleetSimulator:
     def vehicle_count(self) -> int:
         return len(self._vehicles)
 
+    @property
+    def route_ids(self) -> set[str]:
+        """Rutas con unidades simuladas (las demás no reportan posición)."""
+        return {vehicle.pattern.route_id for vehicle in self._vehicles}
+
     def slowdown_by_mode(self) -> dict[str, float]:
         """Cuánto frena el clima a cada modo (1.0 = sin efecto)."""
         weather = getattr(self._engine, "_weather", None)

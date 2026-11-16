@@ -285,6 +285,40 @@ def test_twin_platforms_are_merged(tmp_path):
         store.close()
 
 
+def test_duplicate_patterns_are_merged(tmp_path):
+    """El mismo viaje con otro juego de identificadores de parada (como SiTren)."""
+    stops = [("Uno", 20.60), ("Dos", 20.61), ("Tres", 20.62)]
+    feed = _write_feed(
+        tmp_path / "duplicado.zip",
+        {
+            "routes.txt": "route_id,route_short_name,route_long_name,route_type\n"
+            "ST,L9,Linea 9,3\n",
+            "stops.txt": "stop_id,stop_name,stop_lat,stop_lon\n"
+            + "".join(f"A{i},{n},{lat},-103.30\n" for i, (n, lat) in enumerate(stops))
+            + "".join(
+                f"B{i},{n},{lat + 0.0001},-103.30\n" for i, (n, lat) in enumerate(stops)
+            ),
+            "trips.txt": "route_id,service_id,trip_id,trip_headsign\n"
+            "ST,S,T1,Tres\nST,S,T2,Tres\n",
+            "stop_times.txt": "trip_id,arrival_time,departure_time,stop_id,stop_sequence\n"
+            + "".join(
+                f"{trip},06:0{i * 2}:00,06:0{i * 2}:00,{prefix}{i},{i + 1}\n"
+                for trip, prefix in (("T1", "A"), ("T2", "B"))
+                for i in range(3)
+            ),
+        },
+    )
+    store = TransitStore(feed, tmp_path / "t.db").load()
+    try:
+        patterns = store.get_patterns("ST")
+        assert len(patterns) == 1
+        assert patterns[0].stop_ids == ("A0", "A1", "A2")
+        assert store.build_report.duplicate_patterns_merged == 1
+        assert store.get_stop("B0") is None
+    finally:
+        store.close()
+
+
 def test_impossible_times_are_rebuilt_and_flagged(tmp_path):
     """Dos terminales a 3.3 km con 70 min de recorrido (2.8 km/h): tiempos de relleno.
     Sin shapes.txt, el trazo también es aproximado."""

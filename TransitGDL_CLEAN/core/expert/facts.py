@@ -35,15 +35,21 @@ async def recolectar_hechos(
     vehiculos: int | None = None,
     ahora: datetime | None = None,
 ) -> tuple[dict[str, Any], list[str]]:
-    """Devuelve (hechos iniciales, nombres de rutas alternas)."""
+    """
+    Devuelve (hechos iniciales, nombres de rutas alternas).
+
+    `vehiculos` es la flota en servicio que informa el operador. Las unidades
+    que reportan GPS son otro dato: con rastreo parcial (o en la demostración)
+    son una muestra, así que solo cuentan como flota si así se configura
+    (`GPS_COBERTURA_COMPLETA`).
+    """
     ahora = ahora or datetime.now(GDL_TZ)
     estado = await engine._weather.get_current_state()
 
-    # La cobertura de flota solo es significativa con un conteo real: el
-    # simulador de demostración muestra una muestra reducida de unidades.
-    conteo_real = vehiculos is not None or not engine.simulator_active
-    if vehiculos is None:
-        vehiculos = len(await engine._gps.get_positions_for_route(route.route_id))
+    con_gps = len(await engine._gps.get_positions_for_route(route.route_id))
+    en_servicio = vehiculos
+    if en_servicio is None and engine.fleet_count_from_gps():
+        en_servicio = con_gps
 
     hechos: dict[str, Any] = {
         "clima": estado.condition.value,
@@ -51,8 +57,11 @@ async def recolectar_hechos(
         "es_fin_de_semana": ahora.weekday() >= 5,
         "es_festivo": es_festivo(ahora),
         "tipo_ruta": route.route_type,
-        "vehiculos_en_ruta": int(vehiculos),
+        "vehiculos_en_ruta": con_gps,
+        "gps_esperado": engine.gps_expected(route.route_id),
     }
+    if en_servicio is not None:
+        hechos["unidades_en_servicio"] = int(en_servicio)
 
     factor = engine._weather.travel_factor(estado, route.mode)
     plan = fleet_plan(engine._gtfs, route.route_id, ahora, factor)
@@ -61,9 +70,11 @@ async def recolectar_hechos(
         if plan.is_peak is not None:
             hechos["es_hora_pico_ruta"] = plan.is_peak
         hechos["unidades_necesarias"] = plan.required_vehicles
-        cobertura = coverage(int(vehiculos), plan)
-        if conteo_real and cobertura is not None:
-            hechos["cobertura_flota"] = cobertura
+        # Sin un conteo real de la flota no se puede saber si falta o sobra.
+        if en_servicio is not None:
+            cobertura = coverage(int(en_servicio), plan)
+            if cobertura is not None:
+                hechos["cobertura_flota"] = cobertura
     elif plan is not None:
         hechos["sin_servicio_programado"] = True
 

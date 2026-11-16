@@ -43,7 +43,9 @@ hechos_iniciales:
   es_fin_de_semana: "Sábado o domingo"
   es_festivo: "Día festivo oficial en Jalisco"
   tipo_ruta: "Tipo GTFS de la ruta (0 tranvía, 1 metro, 2 tren, 3 autobús)"
-  vehiculos_en_ruta: "Vehículos con posición en vivo en la ruta"
+  vehiculos_en_ruta: "Unidades que reportan posición GPS en la ruta (con rastreo parcial, una muestra)"
+  gps_esperado: "La ruta debería reportar posiciones: hay una fuente GPS real o el simulador la cubre"
+  unidades_en_servicio: "Flota en servicio informada por el operador o por un GPS que cubre todas las unidades"
   frecuencia_min: "Minutos entre unidades según el horario vigente"
   incidentes_activos: "Número de incidencias activas en la ruta"
   severidad_max_incidente: "Severidad más alta entre las incidencias: low, medium, high, critical"
@@ -55,7 +57,7 @@ hechos_iniciales:
     La frecuencia actual de la ruta está cerca de la mejor del día. No llega
     cuando la ruta opera con la misma frecuencia todo el día.
   unidades_necesarias: "Unidades para sostener la frecuencia: tiempo de ciclo ÷ frecuencia"
-  cobertura_flota: "Unidades en servicio ÷ unidades necesarias (1.0 = completa)"
+  cobertura_flota: "Unidades en servicio ÷ unidades necesarias (1.0 = completa); solo con un conteo real"
   sin_servicio_programado: "La ruta no tiene servicio programado a esta hora"
 
 # Atributos con un solo valor válido: para las reglas cuenta el de mayor certeza.
@@ -240,9 +242,12 @@ reglas:
     prioridad: 100
     si:
       - {hecho: vehiculos_en_ruta, op: "==", valor: 0}
+      - {hecho: gps_esperado, valor: true}
     entonces:
       - {hecho: sin_cobertura_gps, valor: true}
-    explicacion: Ninguna unidad reporta posición; el ETA depende solo del horario.
+    explicacion: >-
+      La ruta debería reportar posiciones y ninguna unidad lo hace; el ETA
+      depende solo del horario.
 
   - id: R17
     nombre: Hora pico de la ruta

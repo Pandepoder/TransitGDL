@@ -87,6 +87,15 @@ flota:
   descanso_min_s: 240
   # La ruta está en su hora pico si su frecuencia es a lo más este múltiplo de la mejor del día.
   umbral_pico: 1.15
+  # El horario ya está reducido (fin de semana, festivo, noche) si su frecuencia
+  # vigente es al menos este múltiplo de la mejor de un día laboral.
+  umbral_recorte: 1.25
   # Cobertura (unidades en ruta / necesarias) bajo la cual la flota es insuficiente.
   cobertura_insuficiente: 0.75
   cobertura_excedente: 1.30
+
+alternas:
+  # Una ruta es alterna si cubre al menos esta fracción de las paradas de otra,
+  # con una parada propia a menos de `radio_km` de cada una.
+  proporcion_minima: 0.25
+  radio_km: 0.3

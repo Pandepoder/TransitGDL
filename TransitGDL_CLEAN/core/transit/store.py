@@ -28,6 +28,7 @@ from ..calendar_utils import es_festivo
 from ..geometry import Polyline, decode_polyline
 from ..gtfs_loader import GTFSLoader
 from ..models import Route, Stop, haversine_km
+from ..params import ALTERNAS
 from ..timezone_utils import GDL_TZ
 from .builder import (
     CATALOG_ALIAS_RANK,
@@ -201,6 +202,7 @@ class TransitStore:
         self._services_cache: dict[date, Optional[frozenset[str]]] = {}
         self._map_coords: dict[str, list[list[float]]] = {}
         self._neighbors: dict[tuple[str, float], list[Route]] = {}
+        self._shares: dict[tuple[str, float], dict[str, float]] = {}
 
     # ── Carga ────────────────────────────────────────────────────────────────
 
@@ -236,8 +238,17 @@ class TransitStore:
             self.load()
 
     def _read(self) -> None:
+        # La base se copia a memoria y el archivo se cierra de inmediato: las
+        # búsquedas (FTS5, R-tree) siguen igual y el archivo queda libre para
+        # reconstruirlo con la app abierta (Windows no reemplaza un archivo
+        # abierto). Son unos 7 MB.
         uri = f"{Path(self.db_path).resolve().as_uri()}?mode=ro"
-        conn = sqlite3.connect(uri, uri=True, check_same_thread=False)
+        disk = sqlite3.connect(uri, uri=True)
+        try:
+            conn = sqlite3.connect(":memory:", check_same_thread=False)
+            disk.backup(conn)
+        finally:
+            disk.close()
         conn.row_factory = sqlite3.Row
         self._conn = conn
         self.meta = dict(conn.execute("SELECT key, value FROM meta").fetchall())
@@ -392,6 +403,7 @@ class TransitStore:
         self._services_cache.clear()
         self._map_coords.clear()
         self._neighbors.clear()
+        self._shares.clear()
 
     # ── Rutas ────────────────────────────────────────────────────────────────
 
@@ -487,6 +499,47 @@ class TransitStore:
             ordered = sorted(found, key=self._route_order.index)
             self._neighbors[key] = [self._routes[rid] for rid in ordered]
         return list(self._neighbors[key])
+
+    def alternative_routes(
+        self,
+        route_id: str,
+        radius_km: float | None = None,
+        min_share: float | None = None,
+    ) -> list[tuple[Route, float]]:
+        """
+        Rutas que de verdad sirven de alterna: las que cubren al menos
+        `min_share` de las paradas de esta (con una parada propia a menos de
+        `radius_km`), de la que más comparte a la que menos. Pasar cerca de una
+        sola parada no basta: en una red densa casi todas lo hacen.
+        """
+        self._assert_loaded()
+        radius_km = float(ALTERNAS["radio_km"] if radius_km is None else radius_km)
+        min_share = float(
+            ALTERNAS["proporcion_minima"] if min_share is None else min_share
+        )
+        route = self.find_route(route_id)
+        if route is None:
+            return []
+        key = (route.route_id, radius_km)
+        shares = self._shares.get(key)
+        if shares is None:
+            stops = self.get_stops_for_route(route.route_id)
+            hits: dict[str, int] = {}
+            for stop in stops:
+                seen: set[str] = set()
+                for near, _ in self.stops_near(stop.lat, stop.lon, radius_km, limit=60):
+                    for rid in self._stop_routes.get(near.stop_id, ()):
+                        if rid != route.route_id and rid not in seen:
+                            seen.add(rid)
+                            hits[rid] = hits.get(rid, 0) + 1
+            total = max(1, len(stops))
+            shares = {rid: count / total for rid, count in hits.items()}
+            self._shares[key] = shares
+        ranked = sorted(
+            (rid for rid, share in shares.items() if share >= min_share),
+            key=lambda rid: (-shares[rid], self._route_order.index(rid)),
+        )
+        return [(self._routes[rid], round(shares[rid], 3)) for rid in ranked]
 
     # ── Patrones ─────────────────────────────────────────────────────────────
 

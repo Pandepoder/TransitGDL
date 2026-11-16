@@ -349,6 +349,17 @@ class TransitEngine:
             return False
 
         pred = self._feedback_store.get_prediction(prediction_id)
+        if pred is not None and pred.method == "frecuencia":
+            # Con "pasa cada H min" la espera real es aleatoria entre 0 y H: la
+            # calificación se guarda, pero no es un sesgo que deba corregirse
+            # ni una dispersión que deba ensanchar los rangos.
+            logger.info(
+                "Feedback guardado sin aprendizaje (estimación por frecuencia): "
+                "pred=%s route=%s",
+                prediction_id[:8],
+                pred.route_id,
+            )
+            return True
         if pred is not None:
             self._learner.record_feedback(
                 pred.route_id,
@@ -583,11 +594,11 @@ class TransitEngine:
         if route is None:
             return []
 
-        neighbors = self._gtfs.routes_near_route(route.route_id)
-        if not neighbors:
+        alternatives = self._gtfs.alternative_routes(route.route_id)
+        if not alternatives:
             return []
 
-        names = ", ".join(neighbor.label for neighbor in neighbors[:4])
+        names = ", ".join(alternative.label for alternative, _ in alternatives[:4])
         return [
             AlternateRoute(
                 original_route_id=route.route_id,

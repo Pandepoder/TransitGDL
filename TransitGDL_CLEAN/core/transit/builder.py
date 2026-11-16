@@ -63,6 +63,9 @@ DEFAULT_MAX_SPEED_MS = 80 / 3.6
 # Velocidad comercial de respaldo cuando un patrón no trae tiempos útiles (m/s).
 FALLBACK_SPEED_MS = {"tren": 35 / 3.6, "brt": 24 / 3.6}
 DEFAULT_FALLBACK_SPEED_MS = 18 / 3.6
+# Espera imposible entre dos paradas: más de 10 min a menos de 2 km/h.
+SLOW_SEGMENT_MIN_S = 600
+SLOW_SEGMENT_MAX_KMH = 2.0
 # Velocidad comercial creíble de un recorrido completo (km/h). Fuera de este
 # rango los tiempos del feed son de relleno y se reconstruyen.
 CREDIBLE_SPEED_KMH = {"tren": (20.0, 60.0)}
@@ -1090,7 +1093,15 @@ def build_transit_db(
         conn.commit()
     finally:
         conn.close()
-    os.replace(tmp_path, db_path)
+    try:
+        os.replace(tmp_path, db_path)
+    except PermissionError as error:
+        tmp_path.unlink(missing_ok=True)
+        raise PermissionError(
+            f"No se pudo reemplazar {db_path}: otro programa lo tiene abierto. "
+            "Cierra la aplicación (o la herramienta que lo use) y vuelve a "
+            "construir la base."
+        ) from error
     return report
 
 
@@ -1418,14 +1429,17 @@ def _repair_offsets(
     Tiempos acumulados (s) desde la primera parada, corrigiendo tramos imposibles.
 
     Un tramo es inválido si no tiene tiempo, si el tiempo no avanza aunque la
-    distancia sí, o si exige más velocidad que `max_speed`. Los tramos inválidos
-    se rellenan con la velocidad media de los tramos válidos del mismo patrón.
+    distancia sí, si exige más velocidad que `max_speed`, o si es una espera
+    imposible: más de `SLOW_SEGMENT_MIN_S` a menos de `SLOW_SEGMENT_MAX_KMH`
+    (el feed trae tramos de 200–300 m en 24 min). Los tramos inválidos se
+    rellenan con la velocidad media de los tramos válidos del mismo patrón.
     """
     n = len(distances)
     if n == 0:
         return [], 0
     valid: list[float | None] = []
     good_time = good_dist = 0.0
+    slow = SLOW_SEGMENT_MAX_KMH / 3.6
     for i in range(n - 1):
         a, b = times[i] if i < len(times) else None, (
             times[i + 1] if i + 1 < len(times) else None
@@ -1436,6 +1450,9 @@ def _repair_offsets(
             continue
         dt = b - a
         if dt < 0 or (dt == 0 and gap > 1.0) or (dt > 0 and gap / dt > max_speed):
+            valid.append(None)
+            continue
+        if dt > SLOW_SEGMENT_MIN_S and gap / dt < slow:
             valid.append(None)
             continue
         valid.append(float(dt))

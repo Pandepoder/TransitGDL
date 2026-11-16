@@ -26,7 +26,6 @@ _ORDEN_SEVERIDAD = [
     IncidentSeverity.HIGH,
     IncidentSeverity.CRITICAL,
 ]
-_RADIO_ALTERNA_KM = 0.3
 
 
 async def recolectar_hechos(
@@ -69,6 +68,8 @@ async def recolectar_hechos(
         hechos["frecuencia_min"] = round(plan.headway_min, 1)
         if plan.is_peak is not None:
             hechos["es_hora_pico_ruta"] = plan.is_peak
+        if plan.reduced_service is not None:
+            hechos["horario_reducido"] = plan.reduced_service
         hechos["unidades_necesarias"] = plan.required_vehicles
         # Sin un conteo real de la flota no se puede saber si falta o sobra.
         if en_servicio is not None:
@@ -92,12 +93,15 @@ async def recolectar_hechos(
 
 
 def _rutas_alternas(engine: "TransitEngine", route: Route) -> list[str]:
-    """Otras rutas con paradas a menos de 300 m de alguna parada de esta."""
+    """
+    Rutas que comparten una parte importante del recorrido (ver
+    `TransitStore.alternative_routes`), de la que más comparte a la que menos.
+    """
     try:
-        vecinas = engine._gtfs.routes_near_route(route.route_id, _RADIO_ALTERNA_KM)
+        alternas = engine._gtfs.alternative_routes(route.route_id)
     except Exception:  # pragma: no cover - base incompleta
         return []
-    return [vecina.label for vecina in vecinas]
+    return [alterna.label for alterna, _ in alternas]
 
 
 def _aprendizaje(

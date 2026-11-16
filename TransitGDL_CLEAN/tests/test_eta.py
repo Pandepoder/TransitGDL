@@ -445,19 +445,76 @@ def test_engine_feedback_loop_learns_a_constant_delay(gtfs_loader, tmp_path):
     engine.initialize_with_loader(gtfs_loader)
 
     async def run():
+        # Una unidad en vivo poco antes de la parada: el aprendizaje corrige las
+        # estimaciones con unidad (las de frecuencia no tienen un sesgo que aprender).
+        await _place_bus_before(engine, "T15", "Cucei", meters=1200)
         for _ in range(30):
             result = await engine.get_eta("T15", "Cucei")
+            assert result.method == "vehiculo"
             # La unidad siempre tarda 6 minutos más de lo que dice el cálculo base.
             assert engine.record_feedback(
                 result.prediction_id, actual_minutes=result.base_minutes + 6
             )
         return await engine.get_eta("T15", "Cucei")
 
-    final = asyncio.run(run())
-    assert final.learned_correction_minutes == pytest.approx(6, abs=0.2)
-    assert final.estimated_minutes == pytest.approx(final.base_minutes + 6, abs=0.2)
-    engine._feedback_store.close()
-    engine._incident_store.close()
+    try:
+        final = asyncio.run(run())
+        assert final.learned_correction_minutes == pytest.approx(6, abs=0.2)
+        assert final.estimated_minutes == pytest.approx(final.base_minutes + 6, abs=0.2)
+    finally:
+        engine._gps._memory.clear()
+        engine._feedback_store.close()
+        engine._incident_store.close()
+
+
+def test_frequency_feedback_is_saved_but_not_learned(gtfs_loader, tmp_path):
+    """Con "pasa cada H min" la espera es aleatoria entre 0 y H: no es un sesgo."""
+    engine = TransitEngine(
+        TransitEngineConfig(
+            gtfs_path=str(tmp_path / "x.zip"),
+            incidents_db_path=str(tmp_path / "incidents.db"),
+            feedback_db_path=str(tmp_path / "feedback.db"),
+        )
+    )
+    engine.initialize_with_loader(gtfs_loader)
+
+    async def run():
+        for _ in range(10):
+            result = await engine.get_eta("T15", "Cucei")
+            assert result.method == "frecuencia"
+            assert engine.record_feedback(
+                result.prediction_id, actual_minutes=result.base_minutes + 6
+            )
+        return await engine.get_eta("T15", "Cucei")
+
+    try:
+        final = asyncio.run(run())
+        assert final.learned_correction_minutes == 0.0
+        assert engine._feedback_store.get_global_stats()["total_feedback"] >= 10
+    finally:
+        engine._feedback_store.close()
+        engine._incident_store.close()
+
+
+async def _place_bus_before(engine, route_id: str, stop_query: str, meters: float):
+    """Pone una unidad en vivo `meters` antes de la parada, en el sentido que la sirve."""
+    route = engine._gtfs.find_route(route_id)
+    boarding = engine._eta.resolve_boardings(route, stop_query)[0]
+    pattern = boarding.pattern
+    progress = max(0.0, pattern.dist_m[boarding.index] - meters)
+    lat, lon = pattern.line.point_at(progress)
+    await engine._gps.update(
+        BusPosition(
+            vehicle_id="vivo-1",
+            route_id=route.route_id,
+            pattern_id=pattern.pattern_id,
+            progress_m=progress,
+            bearing=pattern.line.bearing_at(progress),
+            lat=lat,
+            lon=lon,
+            speed_kmh=18,
+        )
+    )
 
 
 # ── Migraciones ──────────────────────────────────────────────────────────────

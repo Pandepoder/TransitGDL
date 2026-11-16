@@ -26,6 +26,8 @@ HECHOS_NORMALES = {
     "tipo_ruta": 3,
     "vehiculos_en_ruta": 4,
     "unidades_en_servicio": 4,
+    # El horario de la ruta no cambia entre semana, fin de semana ni noche.
+    "horario_reducido": False,
     "frecuencia_min": 12,
     "incidentes_activos": 0,
     "hay_ruta_alterna": True,
@@ -453,6 +455,31 @@ def test_barrido_sin_acciones_de_flota_contradictorias(experto):
             assert d.vehiculos_recomendados > actuales, hechos
         if "reducir_unidades" in ids:
             assert d.vehiculos_recomendados < actuales, hechos
+
+
+def test_festivo_con_horario_ya_reducido_no_recorta_otra_vez(experto):
+    # El festivo opera con horario de domingo: la baja demanda ya está atendida.
+    reducido = experto.diagnosticar(
+        _hechos(es_festivo=True, frecuencia_min=6, horario_reducido=True)
+    )
+    assert reducido.nivel_demanda == "normal"
+    assert "reducir_unidades" not in [a.id for a in reducido.acciones]
+    assert "R28" in [r["regla"] for r in reducido.reglas_disparadas]
+
+    # Si la ruta mantiene su horario laboral en el festivo, sí sobran unidades.
+    completo = experto.diagnosticar(
+        _hechos(
+            es_festivo=True,
+            frecuencia_min=6,
+            horario_reducido=False,
+            unidades_necesarias=10,
+            unidades_en_servicio=10,
+            cobertura_flota=1.0,
+        )
+    )
+    assert completo.nivel_demanda == "baja"
+    assert "reducir_unidades" in [a.id for a in completo.acciones]
+    assert completo.vehiculos_recomendados == 9
 
 
 def test_sin_conteo_de_flota_no_se_compara_con_el_gps(experto):

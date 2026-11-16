@@ -7,6 +7,7 @@ from datetime import date, datetime
 
 import pytest
 
+from core.fleet import fleet_plan
 from core.geometry import Polyline, decode_polyline, encode_polyline, simplify
 from core.models import haversine_km
 from core.timezone_utils import GDL_TZ
@@ -158,6 +159,20 @@ def test_repair_offsets_fixes_impossible_segments():
     assert repaired == 2
     # Los tramos reparados usan la velocidad del tramo válido (500 m en 100 s).
     assert offsets == pytest.approx([0, 100, 200, 300])
+
+
+def test_repair_offsets_fixes_impossible_waits():
+    # 300 m en 1 min, luego 227 m en 24 min (C129 en el feed) y 300 m en 1 min.
+    times = [0, 60, 60 + 24 * 60, 60 + 25 * 60]
+    distances = [0.0, 300.0, 527.0, 827.0]
+
+    offsets, repaired = _repair_offsets(
+        times, distances, max_speed=22.2, fallback_speed=5.0
+    )
+
+    assert repaired == 1
+    # El tramo lento se rehace con la velocidad de los válidos (5 m/s).
+    assert offsets == pytest.approx([0, 60, 60 + 227 / 5, 60 + 227 / 5 + 60])
 
 
 def test_repair_offsets_without_any_time_uses_fallback_speed():
@@ -380,6 +395,51 @@ def test_catalog_route_without_trips_leads_to_its_trunk(tmp_path):
         assert store.catalog_note("T15") is None
     finally:
         store.close()
+
+
+def test_rebuild_works_while_the_store_is_open(tmp_path):
+    """La app carga la base en memoria: se puede reconstruir con la app abierta."""
+    db_path = tmp_path / "t.db"
+    store = TransitStore(FIXTURE_GTFS, db_path, LANDMARKS).load()
+    try:
+        build_transit_db(FIXTURE_GTFS, db_path, LANDMARKS)
+        assert not (tmp_path / "t.db.tmp").exists()
+        assert store.search_stops("cucei")
+        assert store.stops_near(20.6566, -103.3250, 0.5)
+    finally:
+        store.close()
+
+
+def test_alternative_routes_share_a_real_stretch(gtfs_loader):
+    alternatives = gtfs_loader.alternative_routes("T15")
+    assert alternatives
+    route, share = alternatives[0]
+    assert route.route_id == "T11B"
+    assert share >= 0.25
+    shares = [s for _, s in alternatives]
+    assert shares == sorted(shares, reverse=True)
+    # Pasar cerca de unas cuantas paradas no basta para ser alterna.
+    near = {r.route_id for r in gtfs_loader.routes_near_route("T15")}
+    assert len(alternatives) < len(near)
+
+
+def test_reduced_service_compares_with_a_weekday(gtfs_loader):
+    """En domingo y festivo el horario ya trae menos servicio que el laboral."""
+    weekday = datetime(2026, 11, 18, 9, 0, tzinfo=GDL_TZ)  # miércoles
+    sunday = datetime(2026, 11, 22, 9, 0, tzinfo=GDL_TZ)
+    holiday = datetime(2026, 11, 16, 9, 0, tzinfo=GDL_TZ)  # lunes festivo
+    reduced = []
+    for route in gtfs_loader.get_routes():
+        on_weekday = fleet_plan(gtfs_loader, route.route_id, weekday)
+        on_sunday = fleet_plan(gtfs_loader, route.route_id, sunday)
+        on_holiday = fleet_plan(gtfs_loader, route.route_id, holiday)
+        if on_weekday.headway_min == on_weekday.weekday_best_headway_min:
+            assert on_weekday.reduced_service is False
+        if on_sunday.reduced_service:
+            reduced.append(route.route_id)
+            # El festivo usa horario de domingo.
+            assert on_holiday.reduced_service is True
+    assert reduced
 
 
 def test_rebuild_only_when_source_changes(tmp_path):

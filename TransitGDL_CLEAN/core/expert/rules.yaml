@@ -32,7 +32,9 @@
 #    las reglas que los consultan (el cargador también lo valida).
 #  · `nivel_demanda` mide la demanda frente al servicio que el horario ya
 #    programa: en la hora pico de una ruta que ya sube su frecuencia, la demanda
-#    está cubierta y el nivel es normal.
+#    está cubierta y el nivel es normal. Lo mismo al revés: si el horario ya
+#    baja el servicio en fin de semana, festivo o de noche, esa baja demanda
+#    está atendida y no se recorta otra vez.
 # ─────────────────────────────────────────────────────────────────────────────
 
 version: "1.1"
@@ -58,6 +60,9 @@ hechos_iniciales:
     cuando la ruta opera con la misma frecuencia todo el día.
   unidades_necesarias: "Unidades para sostener la frecuencia: tiempo de ciclo ÷ frecuencia"
   cobertura_flota: "Unidades en servicio ÷ unidades necesarias (1.0 = completa); solo con un conteo real"
+  horario_reducido: >-
+    El horario ya trae bastante menos servicio que el mejor de un día laboral
+    (fines de semana, festivos y noches con menos salidas)
   sin_servicio_programado: "La ruta no tiene servicio programado a esta hora"
 
 # Atributos con un solo valor válido: para las reglas cuenta el de mayor certeza.
@@ -353,34 +358,56 @@ reglas:
     explicacion: Con lluvia parte de los usuarios del camión se pasa al tren.
 
   - id: R25
-    nombre: Día festivo
+    nombre: Día festivo con horario completo
     prioridad: 80
     certeza: 0.6
     si:
       - {hecho: es_festivo, valor: true}
+      - {hecho: horario_reducido, valor: false}
     entonces:
       - {hecho: demanda_reducida, valor: true}
-    explicacion: En festivo no hay viajes escolares ni la mayoría de los laborales.
+    explicacion: >-
+      En festivo no hay viajes escolares ni la mayoría de los laborales, y el
+      horario de la ruta no baja su servicio.
 
   - id: R26
-    nombre: Fin de semana
+    nombre: Fin de semana con horario completo
     prioridad: 80
     certeza: 0.5
     si:
       - {hecho: es_fin_de_semana, valor: true}
+      - {hecho: horario_reducido, valor: false}
     entonces:
       - {hecho: demanda_reducida, valor: true}
-    explicacion: Sábado y domingo baja la movilidad obligada.
+    explicacion: >-
+      Sábado y domingo baja la movilidad obligada, y el horario de la ruta no
+      baja su servicio.
 
   - id: R27
-    nombre: Madrugada
+    nombre: Madrugada con horario completo
     prioridad: 80
     certeza: 0.7
     si:
       - {hecho: horario_nocturno, valor: true}
+      - {hecho: horario_reducido, valor: false}
     entonces:
       - {hecho: demanda_reducida, valor: true}
-    explicacion: De noche viajan muy pocos usuarios.
+    explicacion: De noche viajan muy pocos usuarios y la ruta mantiene su frecuencia de día.
+
+  - id: R28
+    nombre: Baja demanda ya prevista en el horario
+    prioridad: 80
+    si:
+      - {hecho: horario_reducido, valor: true}
+    si_alguna:
+      - {hecho: es_festivo, valor: true}
+      - {hecho: es_fin_de_semana, valor: true}
+      - {hecho: horario_nocturno, valor: true}
+    entonces:
+      - {hecho: baja_demanda_prevista, valor: true}
+    explicacion: >-
+      El horario ya reduce el servicio para este día u hora: la baja demanda
+      está atendida y no hace falta retirar más unidades.
 
   # ── Estrato 80 · Evidencia sobre el servicio ───────────────────────────────
   - id: R30

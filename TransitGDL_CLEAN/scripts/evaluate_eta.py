@@ -211,8 +211,10 @@ def report(scenarios: list[Scenario], hours: float, seed: int) -> str:
         "# Evaluación del ETA en vivo",
         "",
         f"Simulación de {hours:g} h por escenario sobre las rutas de la zona CUCEI/Tonalá "
-        f"(semilla {seed}). Solo se cuentan las consultas con unidad a la vista para ambos "
-        "métodos y con llegada observada.",
+        f"(semilla {seed}). Se cuentan las consultas en las que el método nuevo usa una "
+        "unidad en vivo y se observó la llegada. Cuando la unidad con GPS más próxima tarda "
+        "más de 1.5 frecuencias, el método nuevo usa la frecuencia programada (rastreo "
+        "parcial) y esa consulta no entra en la comparación.",
         "",
         "| Escenario | Método | Casos | Error medio | Error p90 | Sesgo | Llegada dentro del rango |",
         "|---|---|---|---|---|---|---|",

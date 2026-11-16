@@ -23,7 +23,10 @@ jobs:
         run: pytest -q
       - name: Run static analysis
         run: |
-          black --check api core tests
-          ruff check api core tests
+          black --check api core tests scripts
+          ruff check api core tests scripts bot
       - name: Verify syntax
-        run: python -m compileall api core tests
+        run: python -m compileall api core bot scripts tests
+      - name: Build transit database from the official feed
+        # Sin red: usa el zip incluido en el repositorio.
+        run: python scripts/build_transit_db.py

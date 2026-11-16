@@ -267,6 +267,23 @@ class ETAEngine:
         live = self._live_candidates(pattern, index, positions, factor, incidents)
         arrivals = self.gtfs.pattern_arrivals(pattern, index, now, limit=3)
 
+        # Rastreo parcial: si la unidad rastreada más próxima llega después de
+        # varias frecuencias, casi seguro pasa antes otra que no reporta GPS.
+        tracked_minutes: float | None = None
+        if (
+            live
+            and headway
+            and self._in_frequency_flow(pattern, index, arrivals, now_s)
+        ):
+            limit_s = headway * 60.0 * float(ETA["frecuencias_max_vivo"]) * factor
+            # Las incidencias retrasan a todas las unidades por igual: no cuentan aquí.
+            penalty_s, _ = self._incident_penalty(
+                pattern, incidents, live[0].progress_m, pattern.dist_m[index]
+            )
+            if live[0].eta_s - penalty_s > limit_s:
+                tracked_minutes = live[0].eta_s / 60.0
+                live = []
+
         vehicle: BusPosition | None = None
         vehicle_distance_m: float | None = None
         next_arrivals: list[float] = []
@@ -360,6 +377,8 @@ class ETAEngine:
             route_label=getattr(route, "label", None),
             stop_id=stop.stop_id,
             stop_name=stop.stop_name,
+            stop_lat=stop.lat,
+            stop_lon=stop.lon,
             estimated_minutes=eta_minutes,
             base_minutes=base_minutes,
             confidence=confidence,
@@ -379,6 +398,7 @@ class ETAEngine:
             next_departures=next_departures,
             next_arrivals_minutes=next_arrivals,
             learned_correction_minutes=correction,
+            tracked_vehicle_minutes=tracked_minutes,
             weather_condition=state.condition.value,
             weather_label=state.label,
             headsign=pattern.headsign,
@@ -388,6 +408,15 @@ class ETAEngine:
             walk_meters=boarding.walk_meters,
             alerts=[incident.summary() for incident in applied],
         )
+
+    @staticmethod
+    def _in_frequency_flow(pattern, index, arrivals, now_s) -> bool:
+        """¿Ya circulan por la parada unidades de una ventana por frecuencia?"""
+        if not arrivals:
+            return False
+        _, window, day_offset = arrivals[0]
+        first_pass = window.start_s + pattern.offset_s[index] + day_offset * 86400
+        return window.headway_s > 0 and not window.exact and first_pass <= now_s
 
     @staticmethod
     def _half(sigma_minutes: float) -> float:

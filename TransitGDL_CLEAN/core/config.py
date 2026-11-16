@@ -69,6 +69,11 @@ class TransitEngineConfig:
     landmarks_path: str = os.getenv("LANDMARKS_PATH", DEFAULT_LANDMARKS_PATH)
     # Región cuyas rutas simula la flota de demostración ("" = toda la red).
     demo_region: str = os.getenv("DEMO_REGION", "tonala_cucei")
+    # Estilo del mapa base (MapLibre). OpenFreeMap no requiere clave; para CARTO
+    # u otro proveedor, pon aquí la URL de su estilo con tu clave.
+    map_style_url: str = os.getenv(
+        "MAP_STYLE_URL", "https://tiles.openfreemap.org/styles/dark"
+    )
 
     def ensure_paths(self) -> None:
         Path(self.gtfs_path).parent.mkdir(parents=True, exist_ok=True)

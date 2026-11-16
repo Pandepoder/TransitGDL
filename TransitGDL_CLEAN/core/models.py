@@ -176,6 +176,9 @@ class ETAResult(FlexibleModel):
     vehicle_lat: Optional[float] = None
     vehicle_lon: Optional[float] = None
     route_id: Optional[str] = None
+    # Coordenadas de la parada, para marcarla en el mapa.
+    stop_lat: Optional[float] = None
+    stop_lon: Optional[float] = None
     service_day_offset: int = 0
     basis: str = "horario_oficial"
     reliability_label: str = "media"
@@ -208,6 +211,9 @@ class ETAResult(FlexibleModel):
     # En vivo: metros que le faltan a la unidad y llegadas de las siguientes.
     vehicle_distance_m: Optional[float] = None
     next_arrivals_minutes: list[float] = Field(default_factory=list)
+    # Con rastreo parcial: minutos de la unidad rastreada más próxima cuando
+    # llega tan tarde que el cálculo usa la frecuencia programada.
+    tracked_vehicle_minutes: Optional[float] = None
     # Otros sentidos o ramales que pasan por la misma parada, en una línea cada uno.
     other_options: list[str] = Field(default_factory=list)
 

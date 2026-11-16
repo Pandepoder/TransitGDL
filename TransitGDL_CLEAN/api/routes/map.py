@@ -1,18 +1,21 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException, Query, WebSocket, WebSocketDisconnect
 
 from api.deps import get_engine
 from core import TransitEngine
+from core.config import CONFIG
 from core.map_catalog import (
     build_featured_shapes,
     build_route_catalog,
     build_route_shape,
     build_stop_layers,
     find_nearby_stops,
+    pattern_geometry,
     route_color,
     route_mode,
     stop_to_feature,
@@ -26,6 +29,30 @@ VALID_LAYERS = frozenset({"metro", "sitren", "macro", "bus"})
 
 def _region_key(region: str | None) -> str | None:
     return None if region in (None, "", "all") else region
+
+
+def _compact(positions: list[dict]) -> list[list]:
+    """
+    Posiciones en arreglos cortos para el canal en vivo:
+    [id, ruta, patrón, avance_m, lat, lon, rumbo, km/h, marca de tiempo en ms].
+    """
+    rows = []
+    for p in positions:
+        stamp = datetime.fromisoformat(p["timestamp"]).timestamp() * 1000
+        rows.append(
+            [
+                p["vehicle_id"],
+                p["route_id"],
+                p.get("pattern_id"),
+                p.get("progress_m"),
+                round(p["lat"], 6),
+                round(p["lon"], 6),
+                p.get("bearing"),
+                p.get("speed_kmh"),
+                int(stamp),
+            ]
+        )
+    return rows
 
 
 async def _live_positions(engine, region: str | None = None) -> list[dict]:
@@ -63,7 +90,10 @@ async def map_bootstrap(
         description="tonala_cucei | all — filtra rutas de la zona CUCEI/Tonalá",
     ),
 ):
-    """Una sola llamada para cargar el mapa: rutas, trazos y vehículos."""
+    """
+    Una sola llamada para cargar el mapa: configuración, rutas, trazos
+    (polilíneas codificadas) y vehículos.
+    """
     engine = get_engine()
     if isinstance(engine, TransitEngine) and engine._initialized:
         await engine.ensure_simulator()
@@ -74,13 +104,40 @@ async def map_bootstrap(
         "region": region_key or "all",
         "simulator": engine.simulator_active,
         "vehicle_count": len(positions),
+        "config": {"style_url": CONFIG.map_style_url},
         "feed": engine._gtfs.feed_info(),
         "routes": build_route_catalog(engine._gtfs, region=region_key),
         "shapes": build_featured_shapes(
-            engine._gtfs, include_bus=False, region=region_key
+            engine._gtfs, include_bus=False, region=region_key, encoded=True
         ),
         "positions": positions,
     }
+
+
+@router.get("/network")
+async def map_network():
+    """Toda la red (rutas y trazos codificados), para cargarla bajo demanda."""
+    engine = get_engine()
+    return {
+        "routes": build_route_catalog(engine._gtfs),
+        "shapes": build_featured_shapes(engine._gtfs, include_bus=True, encoded=True),
+    }
+
+
+@router.get("/patterns")
+async def map_patterns(
+    ids: str = Query(..., max_length=4000, description="Patrones separados por coma"),
+):
+    """Trazos de patrones concretos (los usa la animación de unidades)."""
+    store = get_engine()._gtfs
+    items = []
+    for pattern_id in dict.fromkeys(i.strip() for i in ids.split(",") if i.strip()):
+        pattern = store.get_pattern(pattern_id)
+        if pattern is not None:
+            items.append(pattern_geometry(store, pattern, encoded=True))
+        if len(items) >= 200:
+            break
+    return {"patterns": items}
 
 
 @router.get("/catalog")
@@ -199,7 +256,13 @@ async def map_route_shape(route_id: str):
 
 
 @router.websocket("/ws")
-async def map_live_ws(websocket: WebSocket, region: str | None = None):
+async def map_live_ws(
+    websocket: WebSocket, region: str | None = None, compact: bool = False
+):
+    """
+    Posiciones en vivo cada pocos segundos. Con `compact=true` cada unidad va
+    como arreglo corto (ver `_compact`) y el mensaje trae la hora del servidor.
+    """
     await websocket.accept()
     engine = get_engine()
     if isinstance(engine, TransitEngine) and engine._initialized:
@@ -207,14 +270,21 @@ async def map_live_ws(websocket: WebSocket, region: str | None = None):
     region_key = _region_key(region)
     try:
         while True:
-            await websocket.send_json(
-                {
+            positions = await _live_positions(engine, region_key)
+            if compact:
+                message = {
+                    "type": "positions",
+                    "t": int(time.time() * 1000),
+                    "v": _compact(positions),
+                }
+            else:
+                message = {
                     "type": "positions",
                     "simulator": engine.simulator_active,
                     "updated_at": datetime.now(timezone.utc).isoformat(),
-                    "positions": await _live_positions(engine, region_key),
+                    "positions": positions,
                 }
-            )
+            await websocket.send_json(message)
             await asyncio.sleep(MAP_WS_INTERVAL)
     except WebSocketDisconnect:
         return

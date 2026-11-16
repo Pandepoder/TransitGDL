@@ -183,11 +183,13 @@ class TransitEngine:
         route: str,
         stop: str,
         live_positions: Optional[list[BusPosition]] = None,
+        *,
+        save: bool = True,
     ) -> list[ETAResult]:
         """
         Una estimación por cada sentido (y ramal) de la ruta que pasa por la
-        parada, la que llega primero al inicio. Las predicciones se guardan
-        para poder calificarlas después.
+        parada, la que llega primero al inicio. Con `save` las predicciones se
+        guardan para poder calificarlas después.
         """
         self._assert_initialized()
         routes = self._eta.candidate_routes(route)[:6]
@@ -208,10 +210,39 @@ class TransitEngine:
         options = await self._eta.get_eta_options(
             route, stop, live_positions, incidents=incidents
         )
-        now = datetime.now(GDL_TZ)
-        for result in options:
-            self._save_prediction(result, now)
+        if save:
+            now = datetime.now(GDL_TZ)
+            for result in options:
+                self._save_prediction(result, now)
         return options
+
+    async def get_arrivals(self, place_query: str, limit: int = 12) -> Optional[dict]:
+        """
+        Próximas llegadas de todas las rutas en una parada o lugar: la mejor
+        opción de cada ruta y sentido, la más próxima primero. None si el
+        lugar no existe.
+        """
+        self._assert_initialized()
+        place = self._gtfs.resolve_place(place_query)
+        if place is None:
+            return None
+        arrivals: list[ETAResult] = []
+        for route in self._gtfs.routes_at_place(place)[:24]:
+            options = await self.get_eta_options(
+                route.route_id, place_query, save=False
+            )
+            arrivals.extend(o for o in options if o.route_id == route.route_id)
+        arrivals.sort(key=lambda r: (r.service_day_offset, r.estimated_minutes))
+        return {
+            "place": {
+                "name": place.name,
+                "kind": place.kind,
+                "lat": place.lat,
+                "lon": place.lon,
+                "stop_ids": [stop.stop_id for stop in place.stops],
+            },
+            "arrivals": arrivals[:limit],
+        }
 
     async def get_eta(
         self,

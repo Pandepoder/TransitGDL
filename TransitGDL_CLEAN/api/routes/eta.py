@@ -34,6 +34,41 @@ async def get_eta(
     return result.model_dump(mode="json")
 
 
+@router.get("/options", summary="Llegadas de una ruta en una parada, por sentido")
+async def eta_options(
+    route: str = Query(..., min_length=1, max_length=32, pattern=r"^[A-Za-z0-9 _-]+$"),
+    stop: str = Query(..., min_length=2, max_length=120),
+    locale: str = Depends(get_locale),
+):
+    """Una estimación por cada sentido o ramal que pasa por la parada."""
+    engine = get_engine()
+    options = await engine.get_eta_options(route.strip(), stop.strip())
+    if not options:
+        raise HTTPException(
+            status_code=404, detail=t("errors.eta_not_found", locale=locale)
+        )
+    return {"options": [option.model_dump(mode="json") for option in options]}
+
+
+@router.get("/arrivals", summary="Próximas llegadas en una parada o lugar")
+async def eta_arrivals(
+    place: str = Query(..., min_length=2, max_length=120),
+    limit: int = Query(12, ge=1, le=30),
+    locale: str = Depends(get_locale),
+):
+    """Todas las rutas que pasan por la parada o cerca del lugar, la más próxima primero."""
+    engine = get_engine()
+    result = await engine.get_arrivals(place.strip(), limit=limit)
+    if result is None:
+        raise HTTPException(
+            status_code=404, detail=t("errors.stop_not_found", locale=locale)
+        )
+    return {
+        "place": result["place"],
+        "arrivals": [item.model_dump(mode="json") for item in result["arrivals"]],
+    }
+
+
 @router.get("/stops/search")
 async def search_stops(
     q: str = Query(..., min_length=2, max_length=120),

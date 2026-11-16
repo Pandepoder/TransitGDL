@@ -77,10 +77,37 @@ def build_route_catalog(
     return catalog
 
 
+def pattern_geometry(store: TransitStore, pattern, *, encoded: bool) -> dict[str, Any]:
+    """Trazo de un patrón para el mapa: polilínea codificada o lista [lon, lat]."""
+    payload: dict[str, Any] = {
+        "pattern_id": pattern.pattern_id,
+        "route_id": pattern.route_id,
+        "direction_id": pattern.direction_id,
+        "headsign": pattern.headsign,
+        "length_km": round(pattern.length_m / 1000.0, 1),
+        # Longitud exacta: la usa la animación para ubicar el avance de cada unidad.
+        "length_m": round(pattern.length_m, 1),
+        # El feed no trae un trazo confiable: se unieron las paradas.
+        "approximate": pattern.shape_source == "paradas",
+    }
+    if encoded:
+        payload["polyline"] = pattern.map_polyline
+    else:
+        payload["coordinates"] = store.map_coordinates(pattern)
+    return payload
+
+
 def build_route_shape(
-    store: TransitStore, route_id: str, *, include_stops: bool = True
+    store: TransitStore,
+    route_id: str,
+    *,
+    include_stops: bool = True,
+    encoded: bool = False,
 ) -> dict[str, Any] | None:
-    """Trazos de la ruta (uno por sentido) y, si se pide, sus paradas."""
+    """
+    Trazos de la ruta (uno por sentido) y, si se pide, sus paradas. Con
+    `encoded` los trazos van como polilínea codificada en lugar de coordenadas.
+    """
     route = store.find_route(route_id)
     if route is None:
         return None
@@ -90,23 +117,10 @@ def build_route_shape(
     if not patterns:
         return None
 
-    paths = [
-        {
-            "pattern_id": pattern.pattern_id,
-            "direction_id": pattern.direction_id,
-            "headsign": pattern.headsign,
-            "length_km": round(pattern.length_m / 1000.0, 1),
-            # El feed no trae un trazo confiable: se unieron las paradas.
-            "approximate": pattern.shape_source == "paradas",
-            "coordinates": store.map_coordinates(pattern),
-        }
-        for pattern in patterns
-    ]
-    payload: dict[str, Any] = {
-        **route_summary(route),
-        "coordinates": paths[0]["coordinates"],
-        "paths": paths,
-    }
+    paths = [pattern_geometry(store, p, encoded=encoded) for p in patterns]
+    payload: dict[str, Any] = {**route_summary(route), "paths": paths}
+    if not encoded:
+        payload["coordinates"] = paths[0]["coordinates"]
     if include_stops:
         stops: list[dict[str, Any]] = []
         for pattern in patterns:
@@ -122,6 +136,7 @@ def build_route_shape(
                         "lon": stop.lon,
                         "direction_id": pattern.direction_id,
                         "headsign": pattern.headsign,
+                        "pattern_id": pattern.pattern_id,
                         "sequence": sequence,
                     }
                 )
@@ -134,6 +149,7 @@ def build_featured_shapes(
     *,
     include_bus: bool = False,
     region: str | None = None,
+    encoded: bool = False,
 ) -> list[dict[str, Any]]:
     """
     Trazos para dibujar la red. Con `region` se incluyen todas las rutas de la
@@ -147,7 +163,9 @@ def build_featured_shapes(
             and route_layer(route) not in MASS_TRANSIT_LAYERS
         ):
             continue
-        shape = build_route_shape(store, route.route_id, include_stops=False)
+        shape = build_route_shape(
+            store, route.route_id, include_stops=False, encoded=encoded
+        )
         if shape is not None:
             shapes.append(shape)
     return shapes

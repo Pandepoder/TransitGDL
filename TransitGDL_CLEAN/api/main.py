@@ -7,7 +7,9 @@ from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from api.deps import get_bot_handler, get_engine
@@ -20,6 +22,7 @@ from api.routes.fleet import router as fleet_router
 from api.routes.incidents import router as incidents_router
 from api.routes.map import router as map_router
 from api.routes.routes import router as routes_router
+from api.routes.search import router as search_router
 from api.routes.whatsapp import router as whatsapp_router
 from core import TransitEngine
 from core.config import CONFIG
@@ -165,11 +168,17 @@ app.include_router(routes_router)
 app.include_router(map_router)
 app.include_router(chat_router)
 app.include_router(whatsapp_router)
+app.include_router(search_router)
 
 app.add_exception_handler(StarletteHTTPException, http_exception_handler)
 app.add_exception_handler(HTTPException, http_exception_handler)
 
-_DASHBOARD_HTML = Path(__file__).parent.parent / "static" / "index.html"
+_STATIC_DIR = Path(__file__).parent.parent / "static"
+_DASHBOARD_HTML = _STATIC_DIR / "index.html"
+# Los recursos de la interfaz (estilos y módulos JS) se sirven desde /static.
+app.mount("/static", StaticFiles(directory=_STATIC_DIR), name="static")
+# Respuestas grandes (trazos del mapa) viajan comprimidas.
+app.add_middleware(GZipMiddleware, minimum_size=1024)
 
 
 @app.get("/dashboard", response_class=HTMLResponse, include_in_schema=False)

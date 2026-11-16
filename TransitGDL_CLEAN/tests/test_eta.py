@@ -89,17 +89,18 @@ def _option_for(results, pattern_id):
 
 def test_live_eta_uses_schedule_profile_along_the_route(eta, engine):
     pattern, index = _cucei(engine._gtfs)
-    bus = _bus_at(pattern, 8000.0)
+    start = pattern.dist_m[index] - 1500.0
+    bus = _bus_at(pattern, start)
 
     results = eta.estimate_options("231", "Cucei", [bus], CLEAR, [], TUESDAY_8AM)
     result = _option_for(results, T15_TO_CORONILLA)
 
-    expected = (pattern.offset_s[index] - pattern.time_at(8000.0)) / 60.0
+    expected = (pattern.offset_s[index] - pattern.time_at(start)) / 60.0
     assert result.method == "vehiculo"
     assert result.source == "live"
     assert result.vehicle_id == "bus"
     assert result.estimated_minutes == pytest.approx(expected, abs=0.01)
-    assert result.vehicle_distance_m == pytest.approx(pattern.dist_m[index] - 8000.0)
+    assert result.vehicle_distance_m == pytest.approx(1500.0)
     assert (
         result.window_start_minutes
         < result.estimated_minutes
@@ -118,7 +119,7 @@ def test_live_eta_ignores_opposite_direction_and_buses_that_already_passed(eta, 
     near_dist, _ = opposite.line.project(stop.lat, stop.lon)
     wrong_way = _bus_at(opposite, near_dist, "contrario")
     passed = _bus_at(pattern, pattern.dist_m[index] + 400.0, "ya_paso")
-    coming = _bus_at(pattern, pattern.dist_m[index] - 3000.0, "viene")
+    coming = _bus_at(pattern, pattern.dist_m[index] - 1500.0, "viene")
 
     results = eta.estimate_options(
         "T15", "Cucei", [wrong_way, passed, coming], CLEAR, [], TUESDAY_8AM
@@ -145,11 +146,12 @@ def test_live_eta_picks_first_to_arrive_not_nearest_in_straight_line(eta, engine
 
 
 def test_undeclared_gps_is_matched_by_position_and_heading(eta, engine):
-    pattern, _ = _cucei(engine._gtfs)
-    heading = pattern.line.bearing_at(9000.0)
-    same_way = _bus_at(pattern, 9000.0, "mismo", declare=False, bearing=heading)
+    pattern, index = _cucei(engine._gtfs)
+    where = pattern.dist_m[index] - 1200.0
+    heading = pattern.line.bearing_at(where)
+    same_way = _bus_at(pattern, where, "mismo", declare=False, bearing=heading)
     other_way = _bus_at(
-        pattern, 9000.0, "contra", declare=False, bearing=(heading + 180) % 360
+        pattern, where, "contra", declare=False, bearing=(heading + 180) % 360
     )
 
     with_same = eta.estimate_options("T15", "Cucei", [same_way], CLEAR, [], TUESDAY_8AM)
@@ -159,6 +161,23 @@ def test_undeclared_gps_is_matched_by_position_and_heading(eta, engine):
 
     assert _option_for(with_same, T15_TO_CORONILLA).vehicle_id == "mismo"
     assert _option_for(with_other, T15_TO_CORONILLA).method == "frecuencia"
+
+
+def test_far_tracked_bus_yields_to_frequency_with_partial_coverage(eta, engine):
+    """Con rastreo parcial, una unidad a varias frecuencias no es la siguiente en pasar."""
+    pattern, index = _cucei(engine._gtfs)
+    start = pattern.dist_m[index] - 6000.0
+    far = _bus_at(pattern, start, "lejos")
+
+    result = _option_for(
+        eta.estimate_options("T15", "Cucei", [far], CLEAR, [], TUESDAY_8AM),
+        T15_TO_CORONILLA,
+    )
+
+    expected = (pattern.offset_s[index] - pattern.time_at(start)) / 60.0
+    assert result.method == "frecuencia"
+    assert result.estimated_minutes == pytest.approx(2.5)
+    assert result.tracked_vehicle_minutes == pytest.approx(expected, abs=0.01)
 
 
 # ── Sin unidades: frecuencia y horario ───────────────────────────────────────
@@ -232,7 +251,7 @@ def test_weather_factor_depends_on_intensity_and_mode():
 
 def test_rain_stretches_live_eta_by_travel_factor(eta, engine):
     pattern, index = _cucei(engine._gtfs)
-    bus = _bus_at(pattern, 8000.0)
+    bus = _bus_at(pattern, pattern.dist_m[index] - 1200.0)
 
     dry = _option_for(
         eta.estimate_options("T15", "Cucei", [bus], CLEAR, [], TUESDAY_8AM),
@@ -305,14 +324,14 @@ def _incident(severity, *, routes=("T15",), at=None):
 
 def test_incident_only_counts_between_bus_and_stop(eta, engine):
     pattern, index = _cucei(engine._gtfs)
-    bus = _bus_at(pattern, 8000.0)
-    ahead = _incident(IncidentSeverity.HIGH, at=pattern.line.point_at(10000.0))
+    stop_dist = pattern.dist_m[index]
+    bus = _bus_at(pattern, stop_dist - 1500.0)
+    between = pattern.line.point_at(stop_dist - 700.0)
+    ahead = _incident(IncidentSeverity.HIGH, at=between)
     behind_stop = _incident(
-        IncidentSeverity.HIGH, at=pattern.line.point_at(pattern.dist_m[index] + 1500)
+        IncidentSeverity.HIGH, at=pattern.line.point_at(stop_dist + 1500)
     )
-    other_route = _incident(
-        IncidentSeverity.CRITICAL, routes=("MT_L3",), at=pattern.line.point_at(10000.0)
-    )
+    other_route = _incident(IncidentSeverity.CRITICAL, routes=("MT_L3",), at=between)
 
     base = _option_for(
         eta.estimate_options("T15", "Cucei", [bus], CLEAR, [], TUESDAY_8AM),
@@ -329,6 +348,7 @@ def test_incident_only_counts_between_bus_and_stop(eta, engine):
         T15_TO_CORONILLA,
     )
 
+    assert base.method == hit.method == "vehiculo"
     assert hit.estimated_minutes == pytest.approx(base.estimated_minutes + 8)
     assert hit.alerts == ["Prueba (rutas T15)"]
     assert miss.estimated_minutes == pytest.approx(base.estimated_minutes)

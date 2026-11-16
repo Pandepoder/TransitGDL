@@ -61,6 +61,9 @@ eta:
   tolerancia_parada_m: 30
   # Distancia máxima al trazo para asignar a un patrón un GPS sin patrón declarado.
   radio_vehiculo_m: 150
+  # Rastreo parcial: si la unidad rastreada más próxima tarda más que este
+  # número de frecuencias, se usa la frecuencia (pasa otra que no reporta GPS).
+  frecuencias_max_vivo: 1.5
   # Media anchura del rango (min) que separa confianza alta, media y baja.
   rango_confianza_alta_min: 2.5
   rango_confianza_media_min: 5.0

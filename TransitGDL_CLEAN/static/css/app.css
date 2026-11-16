@@ -111,6 +111,7 @@ svg { flex-shrink: 0; }
 .search-option .opt-title { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .search-option .opt-sub { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .search-empty { padding: 12px 10px; color: var(--muted); }
+.search-notice { margin: 4px 6px 6px; padding: 8px 10px; border-radius: 8px; background: rgba(255, 178, 122, .08); color: var(--text-2); font-size: 12px; line-height: 1.45; }
 
 /* ── Pestañas ───────────────────────────────────────────────────────────── */
 
@@ -203,6 +204,7 @@ svg { flex-shrink: 0; }
 .row-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .row-title { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .row-sub { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row-note { font-size: 11px; color: var(--warn); }
 .row-end { font-weight: 600; font-size: 15px; white-space: nowrap; font-variant-numeric: tabular-nums; }
 
 .skeleton { height: 14px; border-radius: 7px; background: linear-gradient(90deg, #1b2735, #24344a, #1b2735); background-size: 200% 100%; animation: shimmer 1.2s linear infinite; }
@@ -234,6 +236,7 @@ svg { flex-shrink: 0; }
 .fact .v { font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .alert { padding: 10px 12px; border-radius: 10px; background: rgba(255, 178, 122, .1); color: var(--warn); font-size: 13px; }
 .feedback-done { color: var(--live-text); font-size: 13px; }
+.data-note { margin: 0; padding-left: 10px; border-left: 2px solid var(--line-strong, rgba(255, 255, 255, .18)); color: var(--text-2); font-size: 12px; line-height: 1.45; }
 
 /* ── Experto ────────────────────────────────────────────────────────────── */
 

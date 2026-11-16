@@ -2,8 +2,9 @@
 Base de conocimiento: carga y valida las reglas declaradas en `rules.yaml`.
 
 Las reglas se editan en el YAML, sin tocar código Python. Al cargar se valida
-que cada regla esté bien formada y que todo hecho usado en una premisa sea un
-dato inicial declarado o la conclusión de alguna otra regla.
+que cada regla esté bien formada, que todo hecho usado en una premisa sea un
+dato inicial declarado o la conclusión de alguna otra regla, y que las
+negaciones (`!=`, `no_en`, `desconocido`) solo se apliquen a datos iniciales.
 """
 
 from __future__ import annotations
@@ -14,7 +15,15 @@ from typing import Any
 
 import yaml
 
-from .inference import OPERADORES, UMBRAL_CERTEZA, Conclusion, Condicion, Regla
+from .inference import (
+    OPERADORES,
+    OPERADORES_NEGATIVOS,
+    OPERADORES_SIN_VALOR,
+    UMBRAL_CERTEZA,
+    Conclusion,
+    Condicion,
+    Regla,
+)
 
 RUTA_REGLAS = Path(__file__).with_name("rules.yaml")
 
@@ -127,6 +136,15 @@ def _condicion(cruda: Any, regla_id: str) -> Condicion:
     op = str(cruda.get("op", "=="))
     if op not in OPERADORES:
         raise ErrorBaseConocimiento(f"{regla_id}: operador desconocido '{op}'.")
+    if op in OPERADORES_SIN_VALOR:
+        if "valor" in cruda:
+            raise ErrorBaseConocimiento(f"{regla_id}: '{op}' no lleva 'valor'.")
+        return Condicion(
+            hecho=str(cruda["hecho"]),
+            op=op,
+            valor=None,
+            certeza_min=float(cruda.get("certeza_min", UMBRAL_CERTEZA)),
+        )
     if "valor" not in cruda:
         raise ErrorBaseConocimiento(f"{regla_id}: condición sin 'valor'.")
     valor = cruda["valor"]
@@ -163,6 +181,14 @@ def _validar_referencias(
                 raise ErrorBaseConocimiento(
                     f"{regla.id}: el hecho '{condicion.hecho}' no es un dato "
                     "inicial ni lo concluye ninguna regla."
+                )
+            if (
+                condicion.op in OPERADORES_NEGATIVOS
+                and condicion.hecho not in hechos_iniciales
+            ):
+                raise ErrorBaseConocimiento(
+                    f"{regla.id}: '{condicion.op}' solo puede usarse sobre datos "
+                    f"iniciales, y '{condicion.hecho}' es un hecho derivado."
                 )
         for conclusion in regla.entonces:
             if conclusion.hecho in hechos_iniciales:

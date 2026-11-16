@@ -15,6 +15,8 @@ Encadenamiento hacia adelante con factores de certeza (estilo MYCIN):
       las "alguna"); FC(conclusión) = FC(premisa) × certeza de la regla.
       Si dos reglas concluyen el mismo hecho, se combinan:
       FC = FC1 + FC2 × (1 − FC1).
+    • Datos ausentes: `desconocido` se cumple cuando un dato inicial no llegó
+      (negación por ausencia) y `conocido` cuando sí llegó, con cualquier valor.
 
 El motor no sabe nada de transporte: todo el conocimiento del dominio vive en
 `rules.yaml`.
@@ -29,8 +31,25 @@ from typing import Any
 UMBRAL_CERTEZA = 0.2
 MAX_CICLOS = 500
 
-OPERADORES = {"==", "!=", ">", ">=", "<", "<=", "en", "no_en"}
+OPERADORES = {
+    "==",
+    "!=",
+    ">",
+    ">=",
+    "<",
+    "<=",
+    "en",
+    "no_en",
+    "conocido",
+    "desconocido",
+}
+# Operadores que no comparan contra un valor.
+OPERADORES_SIN_VALOR = {"conocido", "desconocido"}
+# Operadores de negación: solo son seguros sobre datos iniciales, que no cambian
+# durante la inferencia (un hecho derivado podría aparecer después).
+OPERADORES_NEGATIVOS = {"!=", "no_en", "desconocido"}
 ORIGEN_INICIAL = "dato"
+VALOR_DESCONOCIDO = "desconocido"
 
 
 @dataclass(frozen=True)
@@ -41,7 +60,10 @@ class Condicion:
     certeza_min: float = UMBRAL_CERTEZA
 
     def texto(self) -> str:
-        base = f"{self.hecho} {self.op} {_fmt(self.valor)}"
+        if self.op in OPERADORES_SIN_VALOR:
+            base = f"{self.hecho} es {self.op}"
+        else:
+            base = f"{self.hecho} {self.op} {_fmt(self.valor)}"
         if self.certeza_min > UMBRAL_CERTEZA:
             base += f" (certeza ≥ {self.certeza_min:g})"
         return base
@@ -283,8 +305,24 @@ class MotorInferencia:
 
         return certeza, usados
 
+    def condicion_cumplida(
+        self, condicion: Condicion, memoria: MemoriaTrabajo
+    ) -> Hecho | None:
+        """Hecho que satisface la condición en `memoria`, o None (para explicar)."""
+        return self._cumple(condicion, memoria)
+
     def _cumple(self, condicion: Condicion, memoria: MemoriaTrabajo) -> Hecho | None:
         """Hecho de mayor certeza que satisface la condición, o None."""
+        if condicion.op == "desconocido":
+            # Negación por ausencia: el dato no llegó. Es un hecho cierto (FC 1).
+            if memoria.mejor(condicion.hecho) is not None:
+                return None
+            return Hecho(condicion.hecho, VALOR_DESCONOCIDO, 1.0, [ORIGEN_INICIAL])
+        if condicion.op == "conocido":
+            mejor = memoria.mejor(condicion.hecho)
+            if mejor is None or mejor.certeza < condicion.certeza_min:
+                return None
+            return mejor
         if condicion.hecho in self.univaluados:
             mejor = memoria.mejor(condicion.hecho)
             valores = [mejor] if mejor is not None else []

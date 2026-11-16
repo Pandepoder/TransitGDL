@@ -18,6 +18,14 @@ class InferRequest(BaseModel):
         description="Hechos iniciales, por ejemplo {'clima': 'rain', 'hora': 8}",
         max_length=40,
     )
+    por_que_no: Optional[str] = Field(
+        None, max_length=40, description="Acción a explicar si no se recomendó"
+    )
+
+
+def _validar_accion(accion: Optional[str]) -> None:
+    if accion and accion not in get_engine().expert.base.acciones:
+        raise HTTPException(status_code=400, detail=f"Acción desconocida: {accion}.")
 
 
 @router.get("/diagnose", summary="Diagnóstico experto de una ruta")
@@ -32,11 +40,19 @@ async def diagnose(
         Optional[Clima], Query(description="Escenario: forzar el clima")
     ] = None,
     hora: Optional[int] = Query(None, ge=0, le=23, description="Escenario: hora"),
+    por_que_no: Optional[str] = Query(
+        None,
+        max_length=40,
+        pattern=r"^[a-z_]+$",
+        description="Explica por qué no se recomendó esta acción",
+    ),
 ):
     """
     Reúne los hechos actuales de la ruta y ejecuta el motor de inferencia.
-    `clima` y `hora` permiten plantear escenarios "¿qué pasaría si…?".
+    `clima` y `hora` permiten plantear escenarios "¿qué pasaría si…?", y
+    `por_que_no` explica qué faltó para recomendar una acción.
     """
+    _validar_accion(por_que_no)
     overrides: dict[str, Any] = {}
     if clima is not None:
         overrides["clima"] = clima
@@ -45,7 +61,7 @@ async def diagnose(
 
     engine = get_engine()
     diagnostico = await engine.diagnose_route(
-        route_id.strip(), vehicles=vehicles, overrides=overrides
+        route_id.strip(), vehicles=vehicles, overrides=overrides, por_que_no=por_que_no
     )
     if diagnostico is None:
         raise HTTPException(status_code=404, detail="Ruta no encontrada.")
@@ -71,7 +87,10 @@ async def infer(body: InferRequest):
                 status_code=400,
                 detail=f"El hecho '{nombre}' debe ser texto, número o booleano.",
             )
-    return experto.diagnosticar(body.hechos).model_dump(mode="json")
+    _validar_accion(body.por_que_no)
+    return experto.diagnosticar(body.hechos, por_que_no=body.por_que_no).model_dump(
+        mode="json"
+    )
 
 
 @router.get("/rules", summary="Base de conocimiento")

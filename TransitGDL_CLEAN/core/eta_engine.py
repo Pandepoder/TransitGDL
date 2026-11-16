@@ -407,6 +407,7 @@ class ETAEngine:
             place_name=boarding.place_name,
             walk_meters=boarding.walk_meters,
             alerts=[incident.summary() for incident in applied],
+            data_notes=list(getattr(pattern, "notes", [])),
         )
 
     @staticmethod

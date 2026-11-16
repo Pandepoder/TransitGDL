@@ -46,12 +46,19 @@ Con Docker: `docker-compose up --build`.
 
 La construcción de la base:
 
-- separa cada ruta en **patrones** (ruta + sentido + secuencia de paradas) y guarda la distancia de cada parada sobre el trazo;
-- **corrige defectos del feed**: trazos invertidos o intercambiados entre sentidos, trazos que no pasan por sus paradas (se arma un trazo híbrido), tiempos imposibles entre paradas y tipos de día sin frecuencia;
-- crea los **alias**: los números de siempre llevan a las claves oficiales (231 → T15, 55 → T11B, 615 → C38/C39, 646 → T04A-1 y T04A-2);
+- separa cada ruta en **patrones** (ruta + sentido + secuencia de paradas) y guarda la distancia de cada parada sobre el trazo. Si el trazo pasa dos veces cerca de una parada (vueltas en "gota", ida y regreso por la misma calle), elige la pasada que respeta el orden del recorrido;
+- **corrige defectos del feed**:
+  - trazos invertidos o intercambiados entre sentidos, y trazos que no pasan por sus paradas (se arma un trazo híbrido);
+  - andenes duplicados: el Tren Ligero listaba cada estación dos veces, así que la Línea 1 mostraba 40 estaciones en vez de 20 y la Línea 2, 20 en vez de 10;
+  - tiempos imposibles, entre paradas o en todo el recorrido (de 0.1 a 45 km/h): se reconstruyen con una velocidad creíble;
+  - tipos de día sin frecuencia;
+- **marca lo que no puede corregir** y la interfaz lo avisa: recorridos con solo sus dos terminales (22), tiempos reconstruidos (13), trazo aproximado (7) y paradas repetidas en exceso (C130);
+- crea los **alias**: los números de siempre llevan a las claves oficiales (231 → T15, 55 → T11B, 615 → C38/C39, 646 → T04A-1 y T04A-2). Las 29 rutas del catálogo oficial sin viajes (como la 231C, T15-C06) llevan a su troncal, con un aviso;
 - indexa paradas por texto (sin acentos) y por cercanía.
 
 El reporte de validación aparece al correr `build_transit_db.py`. Como el calendario del feed venció, se usa como patrón semanal, y los días festivos operan con horario de domingo.
+
+**Verificación externa.** 189 recorridos de 93 rutas están también en OpenStreetMap. Casi todos (178) se importaron de los mismos datos del gobierno, así que coinciden parada por parada: eso confirma que la construcción no altera los datos, no que la calle real coincida. Las estaciones de Mi Macro Calzada y Periférico, mapeadas a mano en OpenStreetMap, quedan a menos de 120 m de las del feed (mediana de 4 a 22 m).
 
 ---
 
@@ -77,10 +84,10 @@ Todos los parámetros están en `core/params.yaml`, para ajustarlos sin tocar c�
 
 | Escenario | Método | Error medio | Llegada dentro del rango |
 |---|---|---|---|
-| Despejado | Anterior | 4.9 min | 58 % |
-| Despejado | Nuevo | 1.3 min | 81 % |
-| Lluvia fuerte | Anterior | 5.8 min | 47 % |
-| Lluvia fuerte | Nuevo | 1.4 min | 83 % |
+| Despejado | Anterior | 3.9 min | 63 % |
+| Despejado | Nuevo | 0.9 min | 87 % |
+| Lluvia fuerte | Anterior | 5.9 min | 47 % |
+| Lluvia fuerte | Nuevo | 1.1 min | 78 % |
 
 El simulador sigue el perfil del horario, así que favorece al método nuevo; la comparación mide sobre todo los errores de geometría y de sentido del método anterior. Detalle en [docs/evaluacion_eta.md](docs/evaluacion_eta.md).
 
@@ -94,14 +101,24 @@ El simulador sigue el perfil del horario, así que favorece al método nuevo; la
 
 | Componente | Archivo | Qué hace |
 |---|---|---|
-| Base de conocimiento | `core/expert/rules.yaml` | 54 reglas SI–ENTONCES con prioridad y factor de certeza; se editan sin tocar Python |
-| Base de hechos | `core/expert/facts.py` | Clima, calendario, frecuencia, flota necesaria y cobertura, incidencias y error aprendido |
-| Motor de inferencia | `core/expert/inference.py` | Encadenamiento hacia adelante, resolución de conflictos por prioridad y especificidad, factores de certeza |
-| Explicación | `core/expert/system.py` | La cadena de reglas detrás de cada acción |
+| Base de conocimiento | `core/expert/rules.yaml` | 63 reglas SI–ENTONCES en seis estratos, con prioridad y factor de certeza; se editan sin tocar Python y se validan al cargar |
+| Base de hechos | `core/expert/facts.py` | Clima, calendario, frecuencia, flota necesaria y cobertura, incidencias, error aprendido y si la ruta tiene servicio a esa hora |
+| Motor de inferencia | `core/expert/inference.py` | Encadenamiento hacia adelante, resolución de conflictos por prioridad y especificidad, factores de certeza, datos ausentes (`desconocido`) |
+| Explicación | `core/expert/system.py` | Cómo: la cadena de reglas detrás de cada acción. ¿Por qué no?: qué condición faltó para recomendar otra acción |
+
+Criterios del diagnóstico:
+
+- **Una sola hora pico.** Si la frecuencia de la ruta cambia durante el día, manda la de la ruta; la hora pico de la ciudad solo se usa para rutas de frecuencia fija.
+- **La demanda se mide frente a lo programado.** En la hora pico de una ruta que ya sube su frecuencia, la demanda está cubierta; solo la lluvia, la saturación o un pico que el horario no atiende piden más unidades.
+- **Una sola decisión de flota** (agregar o retirar), y la cifra recomendada coincide con ella: si la flota actual ya cumple, la decisión pasa a "mantener" y se explica.
+- **Sin servicio programado** solo se informa; no se recomiendan unidades, GPS ni ajustes al ETA.
+
+En un barrido de 20,000 escenarios aleatorios se usan las 63 reglas y no aparece ninguna recomendación contradictoria.
 
 ```bash
 curl "http://127.0.0.1:8000/expert/diagnose?route_id=231"
 curl "http://127.0.0.1:8000/expert/diagnose?route_id=231&clima=thunderstorm&hora=8"   # escenario
+curl "http://127.0.0.1:8000/expert/diagnose?route_id=231&por_que_no=agregar_unidades"
 curl "http://127.0.0.1:8000/expert/rules"
 ```
 
@@ -165,7 +182,8 @@ tests/      Pruebas
 
 ## Limitaciones conocidas
 
-- **Datos de 2024:** el feed oficial más reciente no incluye los cambios de 2026 (por ejemplo, las rutas 8 y 9 de Mi Transporte). La interfaz muestra el año de los datos; actualizarlo es correr `download_gtfs.py` cuando se publique otro.
+- **Datos de 2024:** el feed oficial más reciente no incluye los cambios de 2025 y 2026 (por ejemplo, las rutas 8 y 9 de Mi Transporte). La interfaz muestra el año de los datos; actualizarlo es correr `download_gtfs.py` cuando se publique otro.
+- **Defectos del feed sin arreglo posible:** 22 recorridos traen solo sus dos terminales y C130 repite muchas paradas. La aplicación los marca, pero no puede inventar las paradas que faltan.
 - **Simulador de demostración:** las unidades en vivo son simuladas. Hay hasta tres por sentido en cada ruta de la zona CUCEI/Tonalá, y circulan las 24 horas aunque no haya servicio programado.
 - **Hora pico de los camiones:** el GTFS da a cada ruta de camión una sola frecuencia para todo el día, así que su hora pico se toma del horario general. En tren y Macrobús sale de sus propias frecuencias.
 - **Mapa base:** OpenFreeMap es un servicio comunitario sin garantía de disponibilidad. MapLibre 6 requiere WebGL2.

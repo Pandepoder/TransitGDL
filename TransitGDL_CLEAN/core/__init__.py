@@ -210,6 +210,10 @@ class TransitEngine:
         options = await self._eta.get_eta_options(
             route, stop, live_positions, incidents=incidents
         )
+        catalog_note = self._gtfs.catalog_note(route)
+        if catalog_note:
+            for result in options:
+                result.data_notes.insert(0, catalog_note)
         if save:
             now = datetime.now(GDL_TZ)
             for result in options:
@@ -358,6 +362,7 @@ class TransitEngine:
         route_id: str,
         vehicles: Optional[int] = None,
         overrides: Optional[dict] = None,
+        por_que_no: Optional[str] = None,
     ) -> Optional[Diagnostico]:
         """
         Diagnóstico del sistema experto para una ruta.
@@ -370,13 +375,22 @@ class TransitEngine:
         route = self._gtfs.find_route(route_id)
         if route is None:
             return None
-        hechos, alternas = await recolectar_hechos(self, route, vehicles)
-        hechos.update(overrides or {})
+        overrides = dict(overrides or {})
+        ahora = None
+        if isinstance(overrides.get("hora"), int):
+            # Escenario a otra hora: frecuencia, hora pico de la ruta y flota
+            # necesaria se calculan para esa hora, no para la actual.
+            ahora = datetime.now(GDL_TZ).replace(
+                hour=overrides["hora"], minute=0, second=0, microsecond=0
+            )
+        hechos, alternas = await recolectar_hechos(self, route, vehicles, ahora=ahora)
+        hechos.update(overrides)
         return self._expert.diagnosticar(
             hechos,
             route_id=route.route_id,
             route_name=route.display_name,
             rutas_alternas=alternas,
+            por_que_no=por_que_no,
         )
 
     def report_incident(

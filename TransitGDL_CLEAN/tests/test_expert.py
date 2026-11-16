@@ -253,6 +253,53 @@ def test_base_exige_decidir_univaluados_antes_de_consultarlos():
         )
 
 
+def test_operadores_conocido_y_desconocido():
+    motor = _motor(
+        [
+            {
+                "id": "SIN_DATO",
+                "si": [{"hecho": "a", "op": "desconocido"}],
+                "entonces": [{"hecho": "x", "valor": "falta"}],
+            },
+            {
+                "id": "CON_DATO",
+                "si": [{"hecho": "b", "op": "conocido"}],
+                "entonces": [{"hecho": "x", "valor": "hay"}],
+            },
+        ]
+    )
+    solo_b = motor.inferir({"b": 3}).memoria
+    assert {h.valor for h in solo_b.valores("x")} == {"falta", "hay"}
+    solo_a = motor.inferir({"a": False}).memoria
+    # Un dato presente, aunque sea falso, no es desconocido.
+    assert solo_a.valores("x") == []
+
+
+def test_base_rechaza_negacion_sobre_hechos_derivados():
+    reglas = [
+        {
+            "id": "A",
+            "si": [{"hecho": "a", "valor": True}],
+            "entonces": [{"hecho": "derivado", "valor": True}],
+        },
+        {
+            "id": "B",
+            "si": [{"hecho": "derivado", "op": "desconocido"}],
+            "entonces": [{"hecho": "x", "valor": True}],
+        },
+    ]
+    with pytest.raises(ErrorBaseConocimiento, match="solo puede usarse sobre datos"):
+        construir_base({"hechos_iniciales": {"a": ""}, "reglas": reglas})
+
+    con_valor = {
+        "id": "C",
+        "si": [{"hecho": "a", "op": "desconocido", "valor": True}],
+        "entonces": [{"hecho": "x", "valor": True}],
+    }
+    with pytest.raises(ErrorBaseConocimiento, match="no lleva 'valor'"):
+        construir_base({"hechos_iniciales": {"a": ""}, "reglas": [con_valor]})
+
+
 def test_base_rechaza_accion_no_declarada_y_reglas_duplicadas():
     regla = {
         "id": "A",
@@ -279,11 +326,145 @@ def test_operacion_normal_no_recomienda_acciones(experto):
 
 
 def test_hora_pico_en_dia_laboral_pide_mas_unidades(experto):
+    # Ruta de frecuencia fija: su horario no sube el servicio en la hora pico.
     d = experto.diagnosticar(_hechos(hora=8))
     assert d.nivel_demanda == "alta"
     assert [a.id for a in d.acciones] == ["agregar_unidades"]
+    assert d.decision_flota == "agregar"
     assert d.vehiculos_recomendados == 5
-    assert d.acciones[0].reglas == ["R01", "R20", "R41", "R51"]
+    assert d.acciones[0].reglas == ["R01", "R17B", "R20", "R41", "R47", "R61"]
+
+
+def test_hora_pico_que_el_horario_ya_cubre_no_duplica_la_flota(experto):
+    # La ruta ya opera con su frecuencia de hora pico y tiene la flota completa.
+    d = experto.diagnosticar(
+        _hechos(
+            hora=8,
+            frecuencia_min=5,
+            es_hora_pico_ruta=True,
+            unidades_necesarias=20,
+            vehiculos_en_ruta=20,
+            cobertura_flota=1.0,
+        )
+    )
+    assert d.nivel_demanda == "normal"
+    assert d.acciones == []
+    assert d.vehiculos_recomendados == 20
+
+    # Con lluvia sí hay demanda por encima de lo programado.
+    lluvia = experto.diagnosticar(
+        _hechos(
+            hora=8,
+            clima="rain",
+            frecuencia_min=5,
+            es_hora_pico_ruta=True,
+            unidades_necesarias=20,
+            vehiculos_en_ruta=20,
+            cobertura_flota=1.0,
+        )
+    )
+    assert "agregar_unidades" in [a.id for a in lluvia.acciones]
+    assert lluvia.vehiculos_recomendados == 25
+
+
+def test_la_hora_pico_de_la_ruta_manda_sobre_el_reloj(experto):
+    # 20 h es pico de la ciudad, pero esta ruta ya bajó su frecuencia y le sobran
+    # unidades: solo se recomienda retirar, nunca agregar y retirar a la vez.
+    d = experto.diagnosticar(
+        _hechos(
+            hora=20,
+            es_hora_pico_ruta=False,
+            unidades_necesarias=3,
+            vehiculos_en_ruta=8,
+            cobertura_flota=2.67,
+        )
+    )
+    ids = [a.id for a in d.acciones]
+    assert ids == ["reducir_unidades"]
+    assert d.decision_flota == "reducir"
+    assert d.vehiculos_recomendados == 3
+    assert d.acciones[0].reglas == ["R19", "R43", "R62"]
+
+
+def test_ruta_sin_servicio_solo_informa(experto):
+    d = experto.diagnosticar(
+        _hechos(
+            hora=19,
+            clima="rain",
+            vehiculos_en_ruta=0,
+            frecuencia_min=None,
+            sin_servicio_programado=True,
+        )
+    )
+    ids = [a.id for a in d.acciones]
+    assert "informar_sin_servicio" in ids
+    for accion in (
+        "agregar_unidades",
+        "verificar_gps",
+        "ampliar_ventana_eta",
+        "reducir_velocidad_operativa",
+    ):
+        assert accion not in ids
+    assert d.vehiculos_recomendados == 0
+
+
+def test_la_cifra_de_flota_coincide_con_la_accion(experto):
+    # Lluvia en pico: el motor decide agregar, pero ya circulan 12 de 6 necesarias.
+    d = experto.diagnosticar(
+        _hechos(
+            hora=9,
+            clima="rain",
+            unidades_necesarias=6,
+            vehiculos_en_ruta=12,
+            cobertura_flota=2.0,
+        )
+    )
+    assert d.decision_flota == "mantener"
+    assert d.vehiculos_recomendados == 12
+    assert "agregar_unidades" not in [a.id for a in d.acciones]
+    assert "ya cubre" in d.nota_flota
+    assert d.nota_flota in d.to_chat_message()
+
+
+def test_barrido_sin_acciones_de_flota_contradictorias(experto):
+    import random
+
+    rng = random.Random(3)
+    for _ in range(1500):
+        necesarias = rng.randint(2, 30)
+        actuales = round(necesarias * rng.uniform(0.3, 1.8))
+        hechos = _hechos(
+            hora=rng.randrange(24),
+            clima=rng.choice(["clear", "cloudy", "rain", "thunderstorm", "fog"]),
+            es_fin_de_semana=rng.random() < 0.3,
+            frecuencia_min=rng.choice([4, 6, 10, 15, 25]),
+            unidades_necesarias=necesarias,
+            vehiculos_en_ruta=actuales,
+            cobertura_flota=round(actuales / necesarias, 2),
+        )
+        if rng.random() < 0.4:
+            hechos["es_hora_pico_ruta"] = rng.random() < 0.3
+        d = experto.diagnosticar(hechos)
+        ids = {a.id for a in d.acciones}
+        assert not {"agregar_unidades", "reducir_unidades"} <= ids, hechos
+        if "agregar_unidades" in ids:
+            assert d.vehiculos_recomendados > actuales, hechos
+        if "reducir_unidades" in ids:
+            assert d.vehiculos_recomendados < actuales, hechos
+
+
+def test_por_que_no_explica_lo_que_falto(experto):
+    d = experto.diagnosticar(_hechos(), por_que_no="agregar_unidades")
+    assert d.por_que_no
+    linea = d.por_que_no[0]
+    assert linea.startswith("R61 · Agregar unidades: no se cumple decision_flota")
+    assert "R47 requiere nivel_demanda en [alta, critica]" in linea
+
+    aplicada = experto.diagnosticar(_hechos(hora=8), por_que_no="agregar_unidades")
+    assert aplicada.por_que_no == ["R61 · Agregar unidades: sí se aplicó."]
+    assert experto.diagnosticar(_hechos(), por_que_no="volar").por_que_no == [
+        "«volar» no es una acción de la base de conocimiento."
+    ]
 
 
 def test_hora_pico_en_festivo_no_eleva_la_demanda(experto):
@@ -452,7 +633,7 @@ def test_api_diagnose_devuelve_diagnostico_y_escenario(monkeypatch, experto):
     assert payload["nivel_demanda"] == "alta"
     assert payload["escenario"] == {"clima": "rain", "hora": 8}
     engine.diagnose_route.assert_awaited_once_with(
-        "RG_646", vehicles=None, overrides={"clima": "rain", "hora": 8}
+        "RG_646", vehicles=None, overrides={"clima": "rain", "hora": 8}, por_que_no=None
     )
 
 
@@ -463,6 +644,10 @@ def test_api_diagnose_ruta_inexistente_y_parametros_invalidos(monkeypatch, exper
         assert client.get("/expert/diagnose?route_id=NOPE").status_code == 404
         assert client.get("/expert/diagnose?route_id=X&hora=30").status_code == 422
         assert client.get("/expert/diagnose?route_id=X&clima=lava").status_code == 422
+        assert (
+            client.get("/expert/diagnose?route_id=X&por_que_no=volar").status_code
+            == 400
+        )
 
 
 def test_api_infer_y_rules(monkeypatch, experto):

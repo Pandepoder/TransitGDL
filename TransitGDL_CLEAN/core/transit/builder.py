@@ -39,14 +39,21 @@ from ..gtfs_loader import GTFSLoader
 
 logger = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 SHAPE_TOLERANCE_M = 2.0  # trazo para referencia lineal
 MAP_TOLERANCE_M = 7.0  # trazo ligero para dibujar en el mapa
 SHAPE_FIT_GOOD = 0.9  # ajuste con el que se acepta el trazo sin buscar otro
 SHAPE_FIT_MIN = 0.35  # por debajo, el trazo no sirve y se unen las paradas
 NEAR_SHAPE_M = 60.0  # una parada a más distancia no está sobre el trazo
+FAR_FROM_SHAPE_M = 80.0  # separación con la que una parada cuenta como fuera del trazo
 SHAPE_FIT_SAMPLE = 16  # paradas que se muestrean para medir el ajuste
+CANDIDATE_RADIUS_M = 150.0  # pasadas del trazo que se consideran para cada parada
+
+# Andenes duplicados: el feed lista algunas estaciones dos veces seguidas, con
+# otro identificador, en el mismo punto y a la misma hora.
+TWIN_STOP_M = 30.0
+TWIN_STOP_MAX_GAP_S = 5
 
 # Velocidad máxima creíble entre dos paradas consecutivas (m/s).
 MAX_SPEED_MS = {"tren": 100 / 3.6}
@@ -54,6 +61,21 @@ DEFAULT_MAX_SPEED_MS = 80 / 3.6
 # Velocidad comercial de respaldo cuando un patrón no trae tiempos útiles (m/s).
 FALLBACK_SPEED_MS = {"tren": 35 / 3.6, "brt": 24 / 3.6}
 DEFAULT_FALLBACK_SPEED_MS = 18 / 3.6
+# Velocidad comercial creíble de un recorrido completo (km/h). Fuera de este
+# rango los tiempos del feed son de relleno y se reconstruyen.
+CREDIBLE_SPEED_KMH = {"tren": (20.0, 60.0)}
+DEFAULT_CREDIBLE_SPEED_KMH = (8.0, 32.0)
+
+# Defectos de un recorrido que se avisan al usuario (ver store.PATTERN_NOTES).
+ISSUE_ONLY_TERMINALS = "solo_terminales"
+ISSUE_ESTIMATED_TIMES = "tiempos_estimados"
+ISSUE_APPROXIMATE_SHAPE = "trazo_aproximado"
+ISSUE_STOPS_OFF_SHAPE = "paradas_lejos_del_trazo"
+ISSUE_DOUBTFUL = "recorrido_dudoso"
+DOUBTFUL_REPEATED_STOPS = 3  # paradas distintas que se repiten en un mismo viaje
+
+# Alias de rutas del catálogo que el feed no trae con viajes.
+CATALOG_ALIAS_RANK = 5
 
 # Zonas que definen cada región del mapa: (nombre, lat, lon, radio en metros).
 REGIONS: dict[str, tuple[tuple[str, float, float, float], ...]] = {
@@ -156,9 +178,20 @@ CREATE TABLE patterns (
     is_main       INTEGER NOT NULL,
     shape_source  TEXT NOT NULL,
     shape         BLOB NOT NULL,
-    map_polyline  TEXT NOT NULL
+    map_polyline  TEXT NOT NULL,
+    issues        TEXT NOT NULL   -- defectos del feed, separados por comas
 );
 CREATE INDEX idx_patterns_route ON patterns(route_id);
+
+-- Rutas del catálogo oficial sin viajes: su clave o número antiguo lleva a la
+-- troncal de la misma familia, con un aviso.
+CREATE TABLE catalog_routes (
+    alias       TEXT NOT NULL,
+    route_id    TEXT NOT NULL,
+    short_name  TEXT NOT NULL,
+    long_name   TEXT NOT NULL,
+    PRIMARY KEY (alias, route_id)
+);
 
 CREATE TABLE pattern_stops (
     pattern_id  TEXT NOT NULL,
@@ -231,6 +264,10 @@ class BuildReport:
     routes_without_frequency: int = 0
     segments_repaired: int = 0
     stops_far_from_shape: int = 0
+    twin_stops_merged: int = 0
+    speeds_corrected: int = 0
+    patterns_with_issues: dict[str, int] = field(default_factory=dict)
+    catalog_aliases: int = 0
     landmarks: int = 0
     feed_start: str = ""
     feed_end: str = ""
@@ -254,7 +291,17 @@ class BuildReport:
             + ", ".join(f"{k}={v}" for k, v in sorted(self.patterns_by_source.items()))
             + f"; {self.shapes_reassigned} tomados de otro sentido o invertidos)",
             f"Paradas por patrón: {self.pattern_stops} "
-            f"(a más de 80 m del trazo: {self.stops_far_from_shape})",
+            f"(a más de 80 m del trazo: {self.stops_far_from_shape}; "
+            f"andenes duplicados fusionados: {self.twin_stops_merged})",
+            "Recorridos con defectos del feed: "
+            + (
+                ", ".join(
+                    f"{k}={v}" for k, v in sorted(self.patterns_with_issues.items())
+                )
+                or "ninguno"
+            )
+            + f" ({self.speeds_corrected} con tiempos reconstruidos)",
+            f"Alias de rutas del catálogo sin viajes: {self.catalog_aliases}",
             f"Ventanas de servicio: {self.service_windows} (tipos de día sin frecuencia en el "
             f"feed: {self.service_gaps_filled} rellenados con el sentido contrario o el día "
             f"más parecido, {self.service_gaps_dropped} sin datos)",
@@ -474,6 +521,21 @@ def build_transit_db(
             report.stop_names_fixed += 1
         stop_info[row["stop_id"]] = (name, lat, lon)
 
+    # Secuencia de cada viaje: en orden, solo paradas conocidas y sin andenes
+    # duplicados (misma estación listada dos veces seguidas).
+    twins: set[tuple[str, str]] = set()
+    for trip_id, items in trip_stop_times.items():
+        kept: list[tuple[int, str, int | None]] = []
+        for item in sorted(items):
+            if item[1] not in stop_info:
+                continue
+            if kept and _is_twin_stop(kept[-1], item, stop_info, normalize):
+                twins.add((kept[-1][1], item[1]))
+                continue
+            kept.append(item)
+        trip_stop_times[trip_id] = kept
+    report.twin_stops_merged = len(twins)
+
     # ── Rutas ────────────────────────────────────────────────────────────────
     routes: dict[str, dict[str, Any]] = {}
     for row in route_rows:
@@ -630,26 +692,40 @@ def build_transit_db(
 
             assigned = _assign_distances(line, coords)
             distances = [dist for dist, _ in assigned]
-            report.stops_far_from_shape += sum(
-                1 for _, offset in assigned if offset > 80.0
-            )
+            far = sum(1 for _, offset in assigned if offset > FAR_FROM_SHAPE_M)
+            report.stops_far_from_shape += far
+
+            issues: list[str] = []
+            if len(stop_ids) == 2:
+                issues.append(ISSUE_ONLY_TERMINALS)
+            if source == "paradas":
+                issues.append(ISSUE_APPROXIMATE_SHAPE)
+            if far >= max(2, 0.05 * len(stop_ids)):
+                issues.append(ISSUE_STOPS_OFF_SHAPE)
+            repeated = sum(1 for count in Counter(stop_ids).values() if count > 1)
+            if repeated >= DOUBTFUL_REPEATED_STOPS:
+                issues.append(ISSUE_DOUBTFUL)
 
             # Tiempos del viaje plantilla, relativos a la primera parada.
-            template = sorted(trip_stop_times[trip_ids[0]])
-            template = [item for item in template if item[1] in stop_info]
-            times = [when for _, _, when in template]
+            times = [when for _, _, when in trip_stop_times[trip_ids[0]]]
             offsets, repaired = _repair_offsets(
                 times, distances, max_speed, fallback_speed
             )
             report.segments_repaired += repaired
+            offsets, odd = _credible_offsets(
+                offsets, line.length_m, route["mode"], fallback_speed
+            )
+            if odd:
+                report.odd_speed_patterns += 1
+                report.speeds_corrected += 1
+                issues.append(ISSUE_ESTIMATED_TIMES)
             run_time = offsets[-1]
             if run_time > 0 and line.length_m > 0:
-                speed_kmh = line.length_m / run_time * 3.6
-                speeds_kmh.append(speed_kmh)
-                if speed_kmh < 6.0 or speed_kmh > (
-                    60.0 if route["mode"] == "tren" else 32.0
-                ):
-                    report.odd_speed_patterns += 1
+                speeds_kmh.append(line.length_m / run_time * 3.6)
+            for issue in issues:
+                report.patterns_with_issues[issue] = (
+                    report.patterns_with_issues.get(issue, 0) + 1
+                )
 
             # Servicio: ventanas de frecuencia o salidas únicas.
             windows: set[tuple[str, int, int, int, int]] = set()
@@ -689,6 +765,7 @@ def build_transit_db(
                     "score": (runs_per_day, len(stop_ids)),
                     "map_polyline": encode_polyline(map_points),
                     "shape_id": shape_id,
+                    "issues": issues,
                 }
             )
 
@@ -727,6 +804,7 @@ def build_transit_db(
                     pattern["source"],
                     flat.tobytes(),
                     pattern["map_polyline"],
+                    ",".join(pattern["issues"]),
                 )
             )
             for seq, (sid, dist, offset) in enumerate(
@@ -749,6 +827,7 @@ def build_transit_db(
     report.routes_without_trips = sorted(
         rid for rid in routes if rid not in route_stops
     )
+    catalog_only = [routes[rid] for rid in report.routes_without_trips]
     routes = {rid: route for rid, route in routes.items() if rid in route_stops}
 
     # ── Colores de visualización ─────────────────────────────────────────────
@@ -797,6 +876,35 @@ def build_transit_db(
         base = _BUS_CODE_RE.match(route["short_name"].upper())
         if base and base.group(1) != route["short_name"].upper():
             add_alias(base.group(1), rid, "base", 3)
+
+    # Rutas del catálogo sin viajes (complementarias como T15-C06, "231C"):
+    # su clave y su número antiguo llevan a la troncal de la familia, y la
+    # aplicación avisa que esa variante no tiene recorrido en el feed.
+    catalog_rows: list[tuple[str, str, str, str]] = []
+    for missing in catalog_only:
+        family = family_of(missing)
+        trunks = [r["route_id"] for r in routes.values() if r["short_name"] == family]
+        if not trunks:
+            trunks = [r["route_id"] for r in routes.values() if family_of(r) == family]
+        names = {missing["short_name"], missing["route_id"]}
+        if missing["legacy_number"]:
+            names.add(missing["legacy_number"])
+        for text in names:
+            alias = normalize(text)
+            if not alias:
+                continue
+            catalog_rows.append(
+                (
+                    alias,
+                    missing["route_id"],
+                    missing["short_name"],
+                    missing["long_name"],
+                )
+            )
+            for trunk in trunks:
+                add_alias(text, trunk, "catalogo", CATALOG_ALIAS_RANK)
+    catalog_rows = sorted(set(catalog_rows))
+    report.catalog_aliases = len(catalog_rows)
 
     # ── Regiones ─────────────────────────────────────────────────────────────
     region_rows: list[tuple[str, str]] = []
@@ -924,9 +1032,10 @@ def build_transit_db(
             ],
         )
         conn.executemany(
-            "INSERT INTO patterns VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO patterns VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             pattern_rows,
         )
+        conn.executemany("INSERT INTO catalog_routes VALUES (?, ?, ?, ?)", catalog_rows)
         conn.executemany(
             "INSERT INTO pattern_stops VALUES (?, ?, ?, ?, ?)", pattern_stop_rows
         )
@@ -1057,24 +1166,79 @@ def _assign_distances(
 ) -> list[tuple[float, float]]:
     """
     (distancia sobre el trazo, separación lateral) de cada parada, en orden.
-    La búsqueda avanza siempre hacia adelante para que las distancias crezcan
-    con la secuencia de paradas.
+
+    Una ruta puede pasar dos veces cerca de la misma parada (vueltas en "gota",
+    ida y regreso por la misma calle). Elegir siempre la pasada más cercana
+    puede saltarse un tramo entero y dejar a las paradas siguientes sin lugar
+    en el trazo. Por eso se consideran todas las pasadas de cada parada y se
+    elige la secuencia que avanza en orden con menor costo: separación lateral
+    más el exceso de recorrido sobre lo razonable entre paradas consecutivas.
     """
-    assigned: list[tuple[float, float]] = []
-    previous = 0.0
-    last: tuple[float, float] | None = None
-    for lat, lon in coords:
-        crow = _planar_m(last[0], last[1], lat, lon) if last else 0.0
-        window = max(1500.0, 3.0 * crow + 400.0)
-        dist, offset = line.project(lat, lon, previous, window)
-        if offset > 120.0:
-            # Mal ajuste: se permite buscar más lejos, pero sin saltos largos
-            # que arrastrarían a todas las paradas siguientes.
-            wide_dist, wide_offset = line.project(lat, lon, previous, window + 2000.0)
-            if wide_offset < offset - 30.0:
-                dist, offset = wide_dist, wide_offset
-        assigned.append((dist, offset))
-        previous, last = dist, (lat, lon)
+    n = len(coords)
+    if n == 0:
+        return []
+    total = line.length_m
+
+    def passes(
+        lat: float, lon: float, from_m: float, window_m: float | None
+    ) -> list[tuple[float, float]]:
+        found = line.candidates(lat, lon, CANDIDATE_RADIUS_M, from_m, window_m)
+        if not found:
+            found = [line.project(lat, lon, from_m, window_m)]
+        return found
+
+    # Programación dinámica sobre las pasadas candidatas. Las de cada parada
+    # se buscan a partir de las de la anterior, en una ventana amplia.
+    options: list[list[tuple[float, float]]] = [passes(*coords[0], 0.0, None)]
+    costs: list[list[float]] = [[offset for _, offset in options[0]]]
+    back: list[list[int]] = [[-1] * len(options[0])]
+    for i in range(1, n):
+        crow = _planar_m(*coords[i - 1], *coords[i])
+        reasonable = 2.0 * crow + 300.0
+        alive = [
+            d
+            for (d, _), c in zip(options[i - 1], costs[i - 1], strict=True)
+            if c < float("inf")
+        ]
+        start = max(0.0, min(alive) - 30.0)
+        window = max(alive) - start + 4.0 * crow + 3000.0
+        options.append(passes(*coords[i], start, window))
+        row_cost: list[float] = []
+        row_back: list[int] = []
+        for dist, offset in options[i]:
+            best, best_k = float("inf"), -1
+            for k, (prev_dist, _) in enumerate(options[i - 1]):
+                prev_cost = costs[i - 1][k]
+                if prev_cost == float("inf") or dist < prev_dist - 30.0:
+                    continue
+                excess = max(0.0, (dist - prev_dist) - reasonable)
+                cost = prev_cost + offset + 0.5 * excess
+                if cost < best:
+                    best, best_k = cost, k
+            row_cost.append(best)
+            row_back.append(best_k)
+        if all(cost == float("inf") for cost in row_cost):
+            # Ninguna pasada avanza en orden: la parada se ubica donde quedó la
+            # anterior (la más barata) y la secuencia continúa desde ahí.
+            k = min(range(len(costs[i - 1])), key=costs[i - 1].__getitem__)
+            dist = min(options[i - 1][k][0], total)
+            point = line.point_at(dist)
+            offset = _planar_m(point[0], point[1], *coords[i])
+            options[i] = [(dist, offset)]
+            row_cost, row_back = [costs[i - 1][k] + offset], [k]
+        costs.append(row_cost)
+        back.append(row_back)
+
+    k = min(range(len(costs[-1])), key=costs[-1].__getitem__)
+    assigned: list[tuple[float, float]] = [(0.0, 0.0)] * n
+    for i in range(n - 1, -1, -1):
+        assigned[i] = options[i][k]
+        k = back[i][k]
+    # Distancias no decrecientes (la tolerancia de 30 m permite pequeños retrocesos).
+    floor = 0.0
+    for i, (dist, offset) in enumerate(assigned):
+        floor = max(floor, dist)
+        assigned[i] = (floor, offset)
     return assigned
 
 
@@ -1133,6 +1297,47 @@ def _within(
         return False
     dx = (lon - zone_lon) * METERS_PER_DEGREE * 0.936  # cos(20.6°)
     return dx * dx + dy * dy <= radius_m * radius_m
+
+
+def _is_twin_stop(
+    previous: tuple[int, str, int | None],
+    current: tuple[int, str, int | None],
+    stop_info: dict[str, tuple[str, float, float]],
+    normalize: Any,
+) -> bool:
+    """¿`current` es la misma estación que `previous`, repetida por el feed?"""
+    name_a, lat_a, lon_a = stop_info[previous[1]]
+    name_b, lat_b, lon_b = stop_info[current[1]]
+    if previous[1] == current[1]:
+        return True
+    if normalize(name_a) != normalize(name_b):
+        return False
+    if _planar_m(lat_a, lon_a, lat_b, lon_b) > TWIN_STOP_M:
+        return False
+    if previous[2] is None or current[2] is None:
+        return False
+    return 0 <= current[2] - previous[2] <= TWIN_STOP_MAX_GAP_S
+
+
+def _credible_offsets(
+    offsets: list[float], length_m: float, mode: str, fallback_speed: float
+) -> tuple[list[float], bool]:
+    """
+    Si la velocidad comercial del recorrido completo no es creíble, los tiempos
+    del feed son de relleno: se reescalan (conservando la forma del perfil) a la
+    velocidad de respaldo, si eran demasiado lentos, o al máximo creíble, si
+    eran demasiado rápidos. Devuelve (tiempos, se corrigieron).
+    """
+    run_time = offsets[-1] if offsets else 0.0
+    if run_time <= 0 or length_m <= 0:
+        return offsets, False
+    low, high = CREDIBLE_SPEED_KMH.get(mode, DEFAULT_CREDIBLE_SPEED_KMH)
+    speed = length_m / run_time * 3.6
+    if low <= speed <= high:
+        return offsets, False
+    target = fallback_speed * 3.6 if speed < low else high
+    factor = speed / target
+    return [offset * factor for offset in offsets], True
 
 
 def _repair_offsets(

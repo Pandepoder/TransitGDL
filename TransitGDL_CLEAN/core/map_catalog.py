@@ -69,6 +69,7 @@ def build_route_catalog(
                         "pattern_id": pattern.pattern_id,
                         "direction_id": pattern.direction_id,
                         "headsign": pattern.headsign,
+                        "notes": pattern.notes,
                     }
                     for pattern in patterns
                 ],

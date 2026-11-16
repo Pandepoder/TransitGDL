@@ -216,6 +216,8 @@ class ETAResult(FlexibleModel):
     tracked_vehicle_minutes: Optional[float] = None
     # Otros sentidos o ramales que pasan por la misma parada, en una línea cada uno.
     other_options: list[str] = Field(default_factory=list)
+    # Avisos sobre la calidad de los datos oficiales del recorrido.
+    data_notes: list[str] = Field(default_factory=list)
 
     def _range_label(self) -> str:
         if self.window_start_minutes is None or self.window_end_minutes is None:

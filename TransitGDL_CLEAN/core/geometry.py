@@ -91,14 +91,80 @@ class Polyline:
             ax, ay = xs[i], ys[i]
             dx, dy = xs[i + 1] - ax, ys[i + 1] - ay
             seg2 = dx * dx + dy * dy
+            span = cum[i + 1] - cum[i]
             t = ((px - ax) * dx + (py - ay) * dy) / seg2 if seg2 > 0.0 else 0.0
-            t = 0.0 if t < 0.0 else 1.0 if t > 1.0 else t
+            # En el primer segmento no se vuelve atrás de `from_m`: así la
+            # separación que se informa corresponde a la distancia devuelta.
+            t_min = (from_m - cum[i]) / span if span > 0.0 and cum[i] < from_m else 0.0
+            t = t_min if t < t_min else 1.0 if t > 1.0 else t
             qx, qy = ax + t * dx, ay + t * dy
             d2 = (px - qx) ** 2 + (py - qy) ** 2
             if d2 < best_d2:
-                best_d2 = d2
-                best_dist = cum[i] + t * (cum[i + 1] - cum[i])
-        return max(best_dist, from_m), best_d2**0.5
+                best_d2, best_dist = d2, cum[i] + t * span
+        return best_dist, best_d2**0.5
+
+    def candidates(
+        self,
+        lat: float,
+        lon: float,
+        radius_m: float,
+        from_m: float = 0.0,
+        window_m: float | None = None,
+    ) -> list[tuple[float, float]]:
+        """
+        Cada pasada del trazo a menos de `radius_m` de (lat, lon): el punto más
+        cercano de cada tramo continuo dentro del radio, en orden de avance.
+        Una ruta que pasa dos veces por la misma calle da dos candidatos.
+        """
+        n = len(self.points)
+        if n < 2:
+            return []
+        px, py = lon * self._kx, lat * METERS_PER_DEGREE
+        from_m = min(max(from_m, 0.0), self.cum[-1])
+        start = min(max(bisect_right(self.cum, from_m) - 1, 0), n - 2)
+        limit = self.cum[-1] if window_m is None else from_m + window_m
+        radius2 = radius_m * radius_m
+
+        found: list[tuple[float, float]] = []
+        run: tuple[float, float] | None = None
+        last_in = 0.0
+        xs, ys, cum = self._x, self._y, self.cum
+        for i in range(start, n - 1):
+            if cum[i] > limit:
+                break
+            ax, ay = xs[i], ys[i]
+            span = cum[i + 1] - cum[i]
+            # Descarte rápido: el segmento entero queda fuera del radio.
+            reach = radius_m + span
+            if (px - ax) ** 2 + (py - ay) ** 2 > reach * reach:
+                if run is not None:
+                    found.append(run)
+                    run = None
+                continue
+            dx, dy = xs[i + 1] - ax, ys[i + 1] - ay
+            seg2 = dx * dx + dy * dy
+            t = ((px - ax) * dx + (py - ay) * dy) / seg2 if seg2 > 0.0 else 0.0
+            t_min = (from_m - cum[i]) / span if span > 0.0 and cum[i] < from_m else 0.0
+            t = t_min if t < t_min else 1.0 if t > 1.0 else t
+            qx, qy = ax + t * dx, ay + t * dy
+            d2 = (px - qx) ** 2 + (py - qy) ** 2
+            if d2 <= radius2:
+                dist = cum[i] + t * span
+                # Dos segmentos seguidos dentro del radio pertenecen a pasadas
+                # distintas si sus puntos cercanos están muy separados sobre el
+                # trazo (ida y vuelta en una misma recta).
+                if run is not None and dist - last_in > 4.0 * radius_m:
+                    found.append(run)
+                    run = None
+                if run is None or d2 < run[1]:
+                    run = (dist, d2)
+                last_in = dist
+            elif run is not None:
+                found.append(run)
+                run = None
+        if run is not None:
+            found.append(run)
+        return [(dist, d2**0.5) for dist, d2 in found]
 
     def _segment_at(self, dist_m: float) -> tuple[int, float]:
         """Índice del segmento y fracción (0–1) que corresponden a `dist_m`."""

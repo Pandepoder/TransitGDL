@@ -116,6 +116,8 @@ async def search(
     return {
         "query": text,
         "intent": intent,
+        # Aviso si la ruta buscada está en el catálogo oficial pero sin viajes.
+        "notice": store.catalog_note(route_text),
         "routes": [
             route_summary(r) for r in _matching_routes(store, route_text, limit)
         ],

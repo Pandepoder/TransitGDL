@@ -141,10 +141,11 @@ export function initSearch({ search, onPick }) {
     add("Lugares", "place", result.places);
     add("Paradas", "stop", result.stops);
 
+    const notice = result.notice ? `<li class="search-notice" role="presentation">${esc(result.notice)}</li>` : "";
     if (!items.length) {
-      list.innerHTML = `<li class="search-empty">Sin resultados para «${esc(result.query)}».</li>`;
+      list.innerHTML = notice || `<li class="search-empty">Sin resultados para «${esc(result.query)}».</li>`;
     } else {
-      list.innerHTML = groups.map(([title, idx]) => `
+      list.innerHTML = notice + groups.map(([title, idx]) => `
         ${title ? `<li class="search-group" role="presentation">${title}</li>` : ""}
         ${idx.map((i) => option(items[i], i)).join("")}`).join("");
     }

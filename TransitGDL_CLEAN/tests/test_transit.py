@@ -12,6 +12,10 @@ from core.models import haversine_km
 from core.timezone_utils import GDL_TZ
 from core.transit import TransitStore, build_transit_db, needs_rebuild
 from core.transit.builder import (
+    ISSUE_APPROXIMATE_SHAPE,
+    ISSUE_ESTIMATED_TIMES,
+    ISSUE_ONLY_TERMINALS,
+    _assign_distances,
     _repair_offsets,
     classify_route,
     clean_stop_name,
@@ -47,6 +51,54 @@ def test_project_searches_forward_only():
 
     assert dist_ida == pytest.approx(line.length_m * 0.25, rel=0.01)
     assert dist_vuelta == pytest.approx(line.length_m * 0.75, rel=0.01)
+
+
+def test_project_does_not_hide_points_behind_the_start():
+    """Un punto que quedó atrás no se reporta como si estuviera sobre el trazo."""
+    line = Polyline([(20.60, -103.30), (20.61, -103.30)])
+    dist, offset = line.project(20.602, -103.30, from_m=500)
+    assert dist == pytest.approx(500, abs=1)
+    assert offset == pytest.approx(278, abs=5)
+
+
+def test_candidates_returns_every_pass():
+    ida_y_vuelta = Polyline([(20.60, -103.30), (20.61, -103.30), (20.60, -103.30)])
+    passes = ida_y_vuelta.candidates(20.605, -103.3001, radius_m=50)
+    assert [round(d / ida_y_vuelta.length_m, 2) for d, _ in passes] == [0.25, 0.75]
+    assert all(offset < 15 for _, offset in passes)
+    assert ida_y_vuelta.candidates(20.605, -103.31, radius_m=50) == []
+
+
+def test_stops_follow_a_loop_instead_of_skipping_it():
+    """
+    Ruta en "gota": entra por el sur, da una vuelta y sale al oeste. La parada
+    de la entrada queda más cerca de la segunda pasada que de la primera; elegir
+    siempre la más cercana se saltaría la vuelta entera (caso C123-V1).
+    """
+    line = Polyline(
+        [
+            (20.600, -103.300),
+            (20.610, -103.300),  # cruce
+            (20.610, -103.290),
+            (20.620, -103.290),
+            (20.620, -103.300),
+            (20.6102, -103.300),
+            (20.6102, -103.310),  # salida
+        ]
+    )
+    stops = [
+        (20.6000, -103.3000),
+        (20.6102, -103.3000),  # entrada (también sobre la pasada de regreso)
+        (20.6100, -103.2950),
+        (20.6150, -103.2900),
+        (20.6200, -103.2950),
+        (20.6102, -103.3050),
+    ]
+    assigned = _assign_distances(line, stops)
+    dists = [d for d, _ in assigned]
+    assert dists == sorted(dists)
+    assert dists[1] < 1200  # la entrada, no la pasada de regreso
+    assert all(offset < 30 for _, offset in assigned)
 
 
 def test_point_and_bearing_at_distance():
@@ -192,6 +244,106 @@ def test_reversed_shape_is_detected(tmp_path):
             store.get_next_departures("R1", "A", 0, limit=1)[0]["departure_time"]
             == "06:00:00"
         )
+    finally:
+        store.close()
+
+
+def _write_feed(path, files: dict[str, str]):
+    with zipfile.ZipFile(path, "w") as archive:
+        for name, text in files.items():
+            archive.writestr(name, text)
+    return path
+
+
+def test_twin_platforms_are_merged(tmp_path):
+    """El feed lista la misma estación dos veces seguidas (otro id, mismo punto y hora)."""
+    feed = _write_feed(
+        tmp_path / "gemelas.zip",
+        {
+            "routes.txt": "route_id,route_short_name,route_long_name,route_type\n"
+            "L1,L1,Linea 1,0\n",
+            "stops.txt": "stop_id,stop_name,stop_lat,stop_lon\n"
+            "A,Juárez,20.6000,-103.3500\n"
+            "A2,Juárez,20.60003,-103.35001\n"
+            "B,Mexicaltzingo,20.6100,-103.3500\n"
+            "C,Washington,20.6200,-103.3500\n",
+            "trips.txt": "route_id,service_id,trip_id\nL1,S,T1\n",
+            "stop_times.txt": "trip_id,arrival_time,departure_time,stop_id,stop_sequence\n"
+            "T1,06:00:00,06:00:00,A,1\n"
+            "T1,06:00:00,06:00:00,A2,2\n"
+            "T1,06:02:00,06:02:00,B,3\n"
+            "T1,06:04:00,06:04:00,C,4\n",
+        },
+    )
+    store = TransitStore(feed, tmp_path / "t.db").load()
+    try:
+        pattern = store.get_patterns("L1")[0]
+        assert pattern.stop_ids == ("A", "B", "C")
+        assert store.build_report.twin_stops_merged == 1
+        assert store.get_stop("A2") is None  # ya no la usa ningún recorrido
+    finally:
+        store.close()
+
+
+def test_impossible_times_are_rebuilt_and_flagged(tmp_path):
+    """Dos terminales a 3.3 km con 70 min de recorrido (2.8 km/h): tiempos de relleno.
+    Sin shapes.txt, el trazo también es aproximado."""
+    feed = _write_feed(
+        tmp_path / "lento.zip",
+        {
+            "routes.txt": "route_id,route_short_name,route_long_name,route_type\n"
+            "C9,C9,Corta,3\n",
+            "stops.txt": "stop_id,stop_name,stop_lat,stop_lon\n"
+            "A,Terminal Sur,20.60,-103.30\n"
+            "B,Terminal Norte,20.63,-103.30\n",
+            "trips.txt": "route_id,service_id,trip_id\nC9,S,T1\n",
+            "stop_times.txt": "trip_id,arrival_time,departure_time,stop_id,stop_sequence\n"
+            "T1,06:00:00,06:00:00,A,1\n"
+            "T1,07:10:00,07:10:00,B,2\n",
+        },
+    )
+    store = TransitStore(feed, tmp_path / "t.db").load()
+    try:
+        pattern = store.get_patterns("C9")[0]
+        assert set(pattern.issues) == {
+            ISSUE_ONLY_TERMINALS,
+            ISSUE_ESTIMATED_TIMES,
+            ISSUE_APPROXIMATE_SHAPE,
+        }
+        # Reconstruido a la velocidad de respaldo de camión (18 km/h): unos 11 min.
+        assert pattern.run_time_s / 60 == pytest.approx(11.1, abs=0.3)
+        assert len(pattern.notes) == 3
+        assert all(note.endswith(".") for note in pattern.notes)
+    finally:
+        store.close()
+
+
+def test_catalog_route_without_trips_leads_to_its_trunk(tmp_path):
+    feed = _write_feed(
+        tmp_path / "catalogo.zip",
+        {
+            "routes.txt": "route_id,route_short_name,route_long_name,route_type\n"
+            'T15,T15,"Troncal T15 - 231 ""Prolongacion Alcalde""",3\n'
+            'T15-C06,T15-C06,"Troncal T15-C06 - 231C ""Prolongacion Alcalde '
+            'Complementaria""",3\n',
+            "stops.txt": "stop_id,stop_name,stop_lat,stop_lon\n"
+            "A,Uno,20.60,-103.30\nB,Dos,20.61,-103.30\nC,Tres,20.62,-103.30\n",
+            "trips.txt": "route_id,service_id,trip_id\nT15,S,T1\n",
+            "stop_times.txt": "trip_id,arrival_time,departure_time,stop_id,stop_sequence\n"
+            "T1,06:00:00,06:00:00,A,1\n"
+            "T1,06:04:00,06:04:00,B,2\n"
+            "T1,06:08:00,06:08:00,C,3\n",
+        },
+    )
+    store = TransitStore(feed, tmp_path / "t.db").load()
+    try:
+        assert [r.route_id for r in store.find_routes("231C")] == ["T15"]
+        assert [r.route_id for r in store.find_routes("T15-C06")] == ["T15"]
+        note = store.catalog_note("231C")
+        assert "T15-C06 «Prolongacion Alcalde Complementaria»" in note
+        assert note.endswith("Se muestra la troncal T15.")
+        assert store.catalog_note("231") is None
+        assert store.catalog_note("T15") is None
     finally:
         store.close()
 

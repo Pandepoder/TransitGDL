@@ -75,6 +75,7 @@ export class RoutesPane {
             <span class="row-main">
               <span class="row-title">${esc(r.branch_name || r.long_name)}</span>
               <span class="row-sub">${esc([r.legacy_number ? `Antes ${r.legacy_number}` : "", r.directions.map((d) => d.headsign).join(" ⇄ ")].filter(Boolean).join(" · "))}</span>
+              ${r.directions.some((d) => d.notes?.length) ? `<span class="row-note" title="${esc([...new Set(r.directions.flatMap((d) => d.notes || []))].join(" "))}">Datos oficiales incompletos</span>` : ""}
             </span>
           </button>`).join("")}</div>`;
     }).join("");
@@ -147,7 +148,8 @@ export class ExpertPane {
     const pct = (c) => (c == null ? "" : ` · ${Math.round(c * 100)} %`);
     const scenario = Object.keys(d.escenario || {}).length ? `<span class="badge">Escenario simulado</span>` : "";
     const fleet = d.vehiculos_recomendados != null && d.vehiculos_recomendados !== d.vehiculos_actuales
-      ? `<p class="small" style="margin:0;color:var(--text-2)">Flota: ${d.vehiculos_actuales} en servicio → ${d.vehiculos_recomendados} recomendadas</p>` : "";
+      ? `<p class="small" style="margin:0;color:var(--text-2)">Flota: ${d.vehiculos_actuales} en servicio → ${d.vehiculos_recomendados} recomendadas</p>`
+      : d.nota_flota ? `<p class="small" style="margin:0;color:var(--text-2)">${esc(d.nota_flota)}</p>` : "";
     return `
       <section class="card">
         <div class="level-tags">

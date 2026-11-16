@@ -218,6 +218,7 @@ export class ArrivalsPane {
         <div class="facts">${facts.slice(0, 3).map(([k, v]) => `<span class="fact"><span class="k">${esc(k)}</span><span class="v">${esc(v)}</span></span>`).join("")}</div>
         ${eta.tracked_vehicle_minutes != null ? `<p class="small muted" style="margin:0">La unidad con GPS más próxima está lejos; por la frecuencia, es probable que antes pase otra que no reporta su posición.</p>` : ""}
         ${(eta.alerts || []).map((a) => `<div class="alert">Aviso: ${esc(a)}</div>`).join("")}
+        ${(eta.data_notes || []).map((n) => `<p class="data-note">${esc(n)}</p>`).join("")}
         ${Math.abs(eta.learned_correction_minutes) >= 1 ? `<p class="small muted">Incluye ${eta.learned_correction_minutes > 0 ? "+" : ""}${Math.round(eta.learned_correction_minutes)} min aprendidos de calificaciones anteriores.</p>` : ""}
         ${rated
           ? `<span class="feedback-done">Gracias, tu calificación ajusta las siguientes estimaciones.</span>`

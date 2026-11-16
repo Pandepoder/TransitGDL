@@ -29,9 +29,37 @@ from ..geometry import Polyline, decode_polyline
 from ..gtfs_loader import GTFSLoader
 from ..models import Route, Stop, haversine_km
 from ..timezone_utils import GDL_TZ
-from .builder import BuildReport, ensure_transit_db
+from .builder import (
+    CATALOG_ALIAS_RANK,
+    ISSUE_APPROXIMATE_SHAPE,
+    ISSUE_DOUBTFUL,
+    ISSUE_ESTIMATED_TIMES,
+    ISSUE_ONLY_TERMINALS,
+    ISSUE_STOPS_OFF_SHAPE,
+    BuildReport,
+    ensure_transit_db,
+)
 
 logger = logging.getLogger(__name__)
+
+# Avisos por defecto del feed oficial, en el orden en que se muestran.
+PATTERN_NOTES = {
+    ISSUE_ONLY_TERMINALS: (
+        "El feed oficial solo trae las terminales de este recorrido; "
+        "no se conocen sus paradas intermedias."
+    ),
+    ISSUE_ESTIMATED_TIMES: (
+        "Los tiempos del feed para este recorrido son imposibles; "
+        "se estiman con una velocidad típica."
+    ),
+    ISSUE_APPROXIMATE_SHAPE: (
+        "El trazo de este recorrido es aproximado: une las paradas en línea recta."
+    ),
+    ISSUE_STOPS_OFF_SHAPE: "Algunas paradas quedan lejos del trazo oficial.",
+    ISSUE_DOUBTFUL: (
+        "El feed repite muchas paradas en este recorrido; " "puede estar mal capturado."
+    ),
+}
 
 _MODE_PRIORITY = {"tren": 0, "brt": 1, "trolebus": 2, "bus": 3}
 _TOKEN_RE = re.compile(r"[a-z0-9]+")
@@ -67,6 +95,13 @@ class Pattern:
     line: Polyline
     map_polyline: str
     windows: tuple[ServiceWindow, ...]
+    # Defectos del feed detectados al construir la base (ver PATTERN_NOTES).
+    issues: tuple[str, ...] = ()
+
+    @property
+    def notes(self) -> list[str]:
+        """Avisos para el usuario sobre la calidad de los datos del recorrido."""
+        return [PATTERN_NOTES[code] for code in self.issues if code in PATTERN_NOTES]
 
     def time_at(self, dist_m: float) -> float:
         """Tiempo programado (s desde la terminal) al pasar por `dist_m`."""
@@ -157,6 +192,7 @@ class TransitStore:
         self._stop_patterns: dict[str, list[tuple[Pattern, int]]] = {}
         self._stop_routes: dict[str, list[str]] = {}
         self._alias: dict[str, list[str]] = {}
+        self._catalog: dict[str, list[tuple[str, str]]] = {}
         self._regions: dict[str, set[str]] = {}
         self._landmarks: list[Landmark] = []
         self._calendar: dict[str, tuple[str, Optional[date], Optional[date]]] = {}
@@ -272,6 +308,7 @@ class TransitStore:
                 line=Polyline(points),
                 map_polyline=row["map_polyline"],
                 windows=tuple(windows_by_pattern.get(row["pattern_id"], ())),
+                issues=tuple(code for code in row["issues"].split(",") if code),
             )
             self._patterns[pattern.pattern_id] = pattern
             self._route_patterns.setdefault(pattern.route_id, []).append(pattern)
@@ -310,6 +347,14 @@ class TransitStore:
             ]
             for alias, items in buckets.items()
         }
+        # Alias que solo existen por una ruta del catálogo sin viajes.
+        self._catalog = {}
+        for alias, short_name, long_name in conn.execute(
+            "SELECT alias, short_name, long_name FROM catalog_routes ORDER BY short_name"
+        ):
+            items = buckets.get(alias)
+            if not items or min(rank for rank, _ in items) >= CATALOG_ALIAS_RANK:
+                self._catalog.setdefault(alias, []).append((short_name, long_name))
 
         self._regions = {}
         for route_id, region in conn.execute(
@@ -390,6 +435,39 @@ class TransitStore:
     def find_route(self, query: str) -> Optional[Route]:
         matches = self.find_routes(query)
         return matches[0] if matches else None
+
+    def catalog_note(self, query: str) -> Optional[str]:
+        """
+        Aviso cuando `query` nombra una ruta que está en el catálogo oficial
+        pero sin recorrido ni horarios en el feed ("231C" → T15-C06), y por eso
+        se muestra la troncal de su familia.
+        """
+        self._assert_loaded()
+        if not query or query in self._routes:
+            return None
+        alias = self._normalize(query)
+        entries = self._catalog.get(alias)
+        if not entries:
+            return None
+        names = [
+            f"{short} «{_branch(long_name)}»" if _branch(long_name) else short
+            for short, long_name in entries
+        ]
+        if len(entries) == 1 and self._normalize(entries[0][0]) == alias:
+            subject = f"La {names[0]}"
+            verb = "está"
+        else:
+            subject = f"La {query.strip()} ({', '.join(names)})"
+            verb = "está" if len(entries) == 1 else "están"
+        note = (
+            f"{subject} {verb} en el catálogo oficial, pero el feed no trae su "
+            "recorrido ni sus horarios."
+        )
+        trunks = self._alias.get(alias)
+        if trunks:
+            shown = ", ".join(self._routes[rid].route_short_name for rid in trunks)
+            note += f" Se muestra la troncal {shown}."
+        return note
 
     def route_ids_in_region(self, region: str) -> set[str]:
         self._assert_loaded()
@@ -910,6 +988,12 @@ class TransitStore:
             "patterns": len(self._patterns),
             "landmarks": len(self._landmarks),
         }
+
+
+def _branch(long_name: str) -> str:
+    """Nombre del ramal entre comillas en el nombre largo oficial."""
+    match = re.search(r'"([^"]+)"', long_name or "")
+    return match.group(1).strip() if match else ""
 
 
 def _parse_date(value: str | None) -> Optional[date]:

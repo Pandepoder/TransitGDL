@@ -10,8 +10,9 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from ..calendar_utils import es_festivo
+from ..fleet import coverage, fleet_plan
 from ..models import IncidentSeverity, Route
-from ..prediction_learner import MIN_SAMPLES_TO_APPLY, _day_type, _hour_bucket
+from ..prediction_learner import MIN_SAMPLES_TO_APPLY
 from ..timezone_utils import GDL_TZ
 
 if TYPE_CHECKING:
@@ -36,13 +37,16 @@ async def recolectar_hechos(
 ) -> tuple[dict[str, Any], list[str]]:
     """Devuelve (hechos iniciales, nombres de rutas alternas)."""
     ahora = ahora or datetime.now(GDL_TZ)
-    clima = await engine._weather.get_current_condition()
+    estado = await engine._weather.get_current_state()
 
+    # La cobertura de flota solo es significativa con un conteo real: el
+    # simulador de demostración muestra una muestra reducida de unidades.
+    conteo_real = vehiculos is not None or not engine.simulator_active
     if vehiculos is None:
         vehiculos = len(await engine._gps.get_positions_for_route(route.route_id))
 
     hechos: dict[str, Any] = {
-        "clima": clima.value,
+        "clima": estado.condition.value,
         "hora": ahora.hour,
         "es_fin_de_semana": ahora.weekday() >= 5,
         "es_festivo": es_festivo(ahora),
@@ -50,9 +54,18 @@ async def recolectar_hechos(
         "vehiculos_en_ruta": int(vehiculos),
     }
 
-    frecuencia = _frecuencia(engine, route, ahora)
-    if frecuencia is not None:
-        hechos["frecuencia_min"] = round(frecuencia, 1)
+    factor = engine._weather.travel_factor(estado, route.mode)
+    plan = fleet_plan(engine._gtfs, route.route_id, ahora, factor)
+    if plan is not None and plan.in_service:
+        hechos["frecuencia_min"] = round(plan.headway_min, 1)
+        if plan.is_peak is not None:
+            hechos["es_hora_pico_ruta"] = plan.is_peak
+        hechos["unidades_necesarias"] = plan.required_vehicles
+        cobertura = coverage(int(vehiculos), plan)
+        if conteo_real and cobertura is not None:
+            hechos["cobertura_flota"] = cobertura
+    elif plan is not None:
+        hechos["sin_servicio_programado"] = True
 
     incidentes = engine.get_active_incidents(route_id=route.route_id)
     hechos["incidentes_activos"] = len(incidentes)
@@ -67,25 +80,6 @@ async def recolectar_hechos(
     return hechos, alternas
 
 
-def _frecuencia(engine: "TransitEngine", route: Route, ahora: datetime) -> float | None:
-    minutos = ahora.hour * 60 + ahora.minute
-    try:
-        activa = engine._gtfs.get_active_headway(route.route_id, minutos)
-        if activa:
-            return float(activa)
-        paradas = engine._gtfs.get_stops_for_route(route.route_id)
-        if not paradas:
-            return None
-        parada = paradas[len(paradas) // 2]
-        promedio = engine._gtfs.get_average_headway(
-            route.route_id, parada.stop_id, current_minutes=minutos
-        )
-        return float(promedio) if promedio else None
-    except Exception:  # pragma: no cover - GTFS incompleto
-        logger.debug("No se pudo calcular la frecuencia de %s", route.route_id)
-        return None
-
-
 def _rutas_alternas(engine: "TransitEngine", route: Route) -> list[str]:
     """Otras rutas con paradas a menos de 300 m de alguna parada de esta."""
     try:
@@ -98,20 +92,12 @@ def _rutas_alternas(engine: "TransitEngine", route: Route) -> list[str]:
 def _aprendizaje(
     engine: "TransitEngine", route: Route, ahora: datetime
 ) -> dict[str, Any]:
-    """Agrega el error aprendido de la ruta en la franja horaria actual."""
-    franja = _hour_bucket(ahora.hour)
-    tipo_dia = _day_type(ahora.weekday())
-    filas = [
-        fila
-        for fila in engine._feedback_store.get_route_stats_summary(route.route_id)
-        if fila["hour_bucket"] == franja and fila["day_type"] == tipo_dia
-    ]
-    total = sum(int(fila["sample_count"]) for fila in filas)
+    """Error aprendido de la ruta (ambos sentidos) en la franja actual."""
+    total, media, desviacion = engine._learner.route_summary(
+        route.route_id, ahora.hour, ahora.weekday()
+    )
     hechos: dict[str, Any] = {"muestras_feedback": total}
-    if total < MIN_SAMPLES_TO_APPLY:
-        return hechos
-    media = sum(fila["mean_error"] * fila["sample_count"] for fila in filas) / total
-    varianza = sum(fila["variance"] * fila["sample_count"] for fila in filas) / total
-    hechos["error_medio_min"] = round(media, 1)
-    hechos["desviacion_error_min"] = round(varianza**0.5, 1)
+    if total >= MIN_SAMPLES_TO_APPLY:
+        hechos["error_medio_min"] = round(media, 1)
+        hechos["desviacion_error_min"] = round(desviacion, 1)
     return hechos

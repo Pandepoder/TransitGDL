@@ -47,11 +47,18 @@ async def clear_demo_weather():
 @router.get("/weather", summary="Clima activo (real o simulado)")
 async def get_demo_weather():
     engine = get_engine()
-    condition = await engine._weather.get_current_condition()
+    weather = engine._weather
+    state = await weather.get_current_state()
+    factor = weather.travel_factor(state, "bus")
     return {
-        "condition": condition.value,
-        "simulated": engine._weather._demo_override is not None,
-        "delay_minutes": engine._weather.get_delay_minutes(condition),
+        "condition": state.condition.value,
+        "label": state.label,
+        "precipitation_mm_h": round(state.precipitation_mm_h, 1),
+        "simulated": weather.is_simulated,
+        "bus_travel_factor": round(factor, 2),
+        "train_travel_factor": round(weather.travel_factor(state, "tren"), 2),
+        # Minutos de más en un recorrido típico de 30 minutos en camión.
+        "delay_minutes": round((factor - 1.0) * 30),
     }
 
 
@@ -130,7 +137,7 @@ async def route_insights(route_id: str):
         "short_name": route.route_short_name,
         "live_vehicles": current,
         "weather": condition.value,
-        "weather_simulated": engine._weather._demo_override is not None,
+        "weather_simulated": engine._weather.is_simulated,
         "demand": snapshot.model_dump(mode="json"),
         "fleet": fleet.model_dump(mode="json"),
     }

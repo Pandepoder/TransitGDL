@@ -51,7 +51,7 @@ class TransitEngine:
         self._feedback_store = FeedbackStore(self.config.feedback_db_path)
         self._learner = PredictionLearner(self._feedback_store)
         self._eta = ETAEngine(self._gtfs, self._weather, learner=self._learner)
-        self._demand = DemandAnalyzer(self._weather)
+        self._demand = DemandAnalyzer(self._weather, self._gtfs)
         self._gps = GPSCache(self.config.redis_url)
         self._incident_store = IncidentStore(self.config.incidents_db_path)
         self._expert = SistemaExperto()
@@ -77,6 +77,7 @@ class TransitEngine:
         self._gtfs.load()
         self._eta.gtfs = self._gtfs
         self._eta.learner = self._learner
+        self._demand.store = self._gtfs
         await self._gps.connect()
         self._initialized = True
         await self.ensure_simulator()
@@ -127,6 +128,7 @@ class TransitEngine:
         self._gtfs = loader
         self._eta.gtfs = loader
         self._eta.learner = self._learner
+        self._demand.store = loader
         self._incident_store.initialize()
         self._feedback_store.initialize()
         self._initialized = True
@@ -176,58 +178,75 @@ class TransitEngine:
             "Por ahora la estimación es por *horario oficial* ajustado por clima e incidencias."
         )
 
+    async def get_eta_options(
+        self,
+        route: str,
+        stop: str,
+        live_positions: Optional[list[BusPosition]] = None,
+    ) -> list[ETAResult]:
+        """
+        Una estimación por cada sentido (y ramal) de la ruta que pasa por la
+        parada, la que llega primero al inicio. Las predicciones se guardan
+        para poder calificarlas después.
+        """
+        self._assert_initialized()
+        routes = self._eta.candidate_routes(route)[:6]
+        if not routes:
+            return []
+        if live_positions is None:
+            live_positions = []
+            for route_obj in routes:
+                live_positions.extend(
+                    await self._gps.get_positions_for_route(route_obj.route_id)
+                )
+        incidents: list[Incident] = []
+        for route_obj in routes:
+            for incident in self.get_active_incidents(route_id=route_obj.route_id):
+                if incident.incident_id not in {i.incident_id for i in incidents}:
+                    incidents.append(incident)
+
+        options = await self._eta.get_eta_options(
+            route, stop, live_positions, incidents=incidents
+        )
+        now = datetime.now(GDL_TZ)
+        for result in options:
+            self._save_prediction(result, now)
+        return options
+
     async def get_eta(
         self,
         route: str,
         stop: str,
         live_positions: Optional[list[BusPosition]] = None,
     ) -> Optional[ETAResult]:
-        self._assert_initialized()
-        found = self._gtfs.find_route(route)
-        if live_positions is None and found:
-            live_positions = await self._gps.get_positions_for_route(found.route_id)
-
-        result = await self._eta.get_eta(route, stop, live_positions or [])
-        if result is None:
+        """La opción que llega primero; las demás quedan resumidas en `other_options`."""
+        options = await self.get_eta_options(route, stop, live_positions)
+        if not options:
             return None
+        best = options[0]
+        best.other_options = [option.compact_line() for option in options[1:]]
+        return best
 
-        alerts = self.get_active_incidents(
-            route_id=result.route_id, stop_id=result.stop_id
-        )
-        result.alerts = [incident.summary() for incident in alerts]
-        if alerts and result.source == "schedule":
-            incident_delay = 2.0
-            result.estimated_minutes += incident_delay
-            result.delay_minutes += incident_delay
-            if result.window_start_minutes is not None:
-                result.window_start_minutes += incident_delay
-            result.window_end_minutes = (
-                result.window_end_minutes or result.estimated_minutes
-            ) + 3.0
-            result.confidence = max(0.5, result.confidence - 0.08)
-            result.reliability_label = "media" if result.confidence >= 0.7 else "baja"
-            result.basis = "horario_oficial_ajustado_incidencias"
-
-        # Guardar predicción para correlacionar con feedback futuro.
-        # La condición climática ya viene en result.weather_condition (set por ETAEngine),
-        # evitando una segunda llamada HTTP a Open-Meteo.
-        if result.route_id and result.stop_id:
-            now = datetime.now(GDL_TZ)
-            self._feedback_store.save_prediction(
-                PredictionRecord(
-                    prediction_id=result.prediction_id,
-                    route_id=result.route_id,
-                    stop_id=result.stop_id,
-                    predicted_minutes=result.estimated_minutes,
-                    weather_condition=result.weather_condition,
-                    hour_of_day=now.hour,
-                    day_of_week=now.weekday(),
-                    source=result.source,
-                    created_at=result.updated_at.isoformat(),
-                )
+    def _save_prediction(self, result: ETAResult, now: datetime) -> None:
+        if not (result.route_id and result.stop_id):
+            return
+        self._feedback_store.save_prediction(
+            PredictionRecord(
+                prediction_id=result.prediction_id,
+                route_id=result.route_id,
+                stop_id=result.stop_id,
+                predicted_minutes=result.estimated_minutes,
+                weather_condition=result.weather_condition,
+                hour_of_day=now.hour,
+                day_of_week=now.weekday(),
+                source=result.source,
+                created_at=result.updated_at.isoformat(),
+                base_minutes=result.base_minutes,
+                learned_correction=result.learned_correction_minutes,
+                direction_id=result.direction_id,
+                method=result.method,
             )
-
-        return result
+        )
 
     def record_feedback(
         self,
@@ -253,7 +272,6 @@ class TransitEngine:
         if error_minutes is None:
             return False
 
-        # Obtener contexto temporal de la predicción original para actualizar el slot correcto
         pred = self._feedback_store.get_prediction(prediction_id)
         if pred is not None:
             self._learner.record_feedback(
@@ -262,6 +280,8 @@ class TransitEngine:
                 pred.hour_of_day,
                 pred.day_of_week,
                 error_minutes,
+                direction_id=pred.direction_id,
+                applied_correction=pred.learned_correction or 0.0,
             )
             logger.info(
                 "Feedback registrado: pred=%s route=%s stop=%s error=%.1f min",
@@ -290,6 +310,10 @@ class TransitEngine:
     async def get_fleet_recommendation(
         self, route_id: str, current_vehicles: int
     ) -> FleetRecommendation:
+        """
+        Unidades que la ruta necesita para sostener su frecuencia programada
+        (tiempo de ciclo ÷ frecuencia) frente a las que tiene en servicio.
+        """
         self._assert_initialized()
         snapshot = await self._demand.get_demand_snapshot(route_id, current_vehicles)
         return self._demand.get_fleet_recommendation(snapshot)
@@ -483,14 +507,19 @@ class TransitEngine:
         return f"{where} pasan: {listing}"
 
     async def _handle_weather_query(self) -> str:
-        condition = await self._weather.get_current_condition()
-        delay = self._weather.get_delay_minutes(condition)
-        if self._weather.is_rain_alert(condition):
+        state = await self._weather.get_current_state()
+        factor = self._weather.travel_factor(state, "bus")
+        if factor > 1.02:
+            extra = round((factor - 1.0) * 100)
             return (
-                f"Alerta de clima en GDL: *{condition.value.replace('_', ' ')}*.\n"
-                f"Retrasos estimados: +{round(delay)} min en rutas con horario oficial."
+                f"Clima en GDL: *{state.label}*.\n"
+                f"Los camiones tardan alrededor de {extra} % más en recorrer su ruta; "
+                "el tren casi no se afecta. Los tiempos estimados ya lo consideran."
             )
-        return "Clima estable en GDL. No hay retrasos relevantes por clima en este momento."
+        return (
+            f"Clima en GDL: *{state.label}*. "
+            "No hay retrasos relevantes por clima en este momento."
+        )
 
     def _parse_route_stop(self, query: str) -> tuple[Optional[str], Optional[str]]:
         route = None

@@ -121,12 +121,21 @@ class SistemaExperto:
         factor = memoria.mejor("factor_flota")
 
         actuales = hechos.get("vehiculos_en_ruta")
+        necesarias = hechos.get("unidades_necesarias")
         recomendados = None
         if isinstance(actuales, int) and not isinstance(actuales, bool):
             multiplicador = float(factor.valor) if factor else 1.0
-            recomendados = max(1, ceil(max(1, actuales) * multiplicador))
-            if multiplicador == 1.0:
+            # La base es lo que la ruta necesita según su horario; si no se
+            # conoce, se parte de lo que hay en servicio.
+            base = (
+                necesarias
+                if isinstance(necesarias, int) and necesarias > 0
+                else actuales
+            )
+            if multiplicador == 1.0 and base == actuales:
                 recomendados = actuales
+            else:
+                recomendados = max(1, ceil(max(1, base) * multiplicador))
 
         acciones = []
         for hecho in sorted(

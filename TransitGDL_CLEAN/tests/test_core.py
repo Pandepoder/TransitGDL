@@ -15,12 +15,17 @@ def test_engine_smoke(gtfs_loader):
     result = asyncio.run(engine.get_eta(BRT_ROUTE, BRT_STOP_NAME))
     assert result is not None
     assert result.estimated_minutes >= 0
-    assert result.average_headway_minutes is not None
-    assert result.next_departures
     assert result.window_end_minutes is not None
     assert result.window_start_minutes is not None
     assert result.window_end_minutes >= result.window_start_minutes
     assert result.headsign
+    # Sin unidades en vivo: frecuencia si hay servicio ahora, si no la próxima salida.
+    assert result.method in {"frecuencia", "horario"}
+    if result.method == "frecuencia":
+        assert result.average_headway_minutes is not None
+        assert result.next_departures == []
+    else:
+        assert result.next_departures
 
 
 def test_engine_asks_for_stop_when_route_is_missing_context(gtfs_loader):

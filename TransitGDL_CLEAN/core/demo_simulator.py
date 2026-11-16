@@ -166,9 +166,16 @@ class FleetSimulator:
     def vehicle_count(self) -> int:
         return len(self._vehicles)
 
-    def slowdown(self) -> float:
-        """Factor que frena a toda la flota (clima); 1.0 = sin efecto."""
-        return 1.0
+    def slowdown_by_mode(self) -> dict[str, float]:
+        """Cuánto frena el clima a cada modo (1.0 = sin efecto)."""
+        weather = getattr(self._engine, "_weather", None)
+        if weather is None:
+            return {}
+        state = weather.cached_state()
+        return {
+            mode: weather.travel_factor(state, mode)
+            for mode in ("tren", "brt", "trolebus", "bus")
+        }
 
     async def start(self) -> None:
         if self._task is not None:
@@ -205,9 +212,12 @@ class FleetSimulator:
 
     def step(self, dt_seconds: float) -> None:
         """Avanza la simulación sin publicar (útil para pruebas y evaluación)."""
-        slowdown = self.slowdown()
+        slowdown = self.slowdown_by_mode()
+        store = self._engine._gtfs
         for vehicle in self._vehicles:
-            vehicle.advance(dt_seconds, slowdown, self._rng, self._turnaround)
+            route = store.get_route(vehicle.pattern.route_id)
+            factor = slowdown.get(route.mode if route else "bus", 1.0)
+            vehicle.advance(dt_seconds, factor, self._rng, self._turnaround)
 
     async def _tick(self, dt_seconds: float) -> None:
         self.step(dt_seconds)

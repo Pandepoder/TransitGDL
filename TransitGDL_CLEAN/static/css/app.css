@@ -251,6 +251,26 @@ svg { flex-shrink: 0; }
 .action ol, .rules ol { margin: 6px 0 0 18px; padding: 0; color: var(--text-2); font-size: 12px; }
 .rules li { margin-bottom: 6px; }
 
+/* Módulo de explicación: "¿por qué no?", base de hechos y traza de inferencia. */
+.why-not { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; padding: 12px; border-radius: 10px; background: var(--bg); }
+.why-not .field { flex: 1 1 220px; }
+.why-not #ex-whynot-out { flex-basis: 100%; }
+.why-not-list { margin: 4px 0 0 18px; padding: 0; color: var(--text-2); line-height: 1.5; }
+.why-not-list li { margin-bottom: 6px; overflow-wrap: anywhere; }
+.trace { padding: 10px 12px; border-radius: 10px; background: var(--bg); }
+.trace summary { cursor: pointer; color: var(--focus); }
+.trace-title { margin: 12px 0 6px; font-size: 12px; font-weight: 600; color: var(--text); }
+.facts-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 6px 12px; margin: 0; }
+.facts-list div { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.facts-list dt { color: var(--text-2); font-size: 11px; line-height: 1.35; }
+.facts-list dd { margin: 0; font-weight: 600; color: var(--text); }
+.derived-list { margin: 0 0 0 18px; padding: 0; color: var(--text-2); line-height: 1.5; overflow-wrap: anywhere; }
+.trace-list { margin: 8px 0 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }
+.trace-list li { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; border-radius: 8px; border-left: 3px solid var(--line); background: var(--card); color: var(--text-2); overflow-wrap: anywhere; }
+.trace-list li.is-chain { border-left-color: var(--accent); }
+.trace-head { color: var(--text); }
+.trace-then { color: var(--text); }
+
 /* ── Asistente ──────────────────────────────────────────────────────────── */
 
 .chat { display: flex; flex-direction: column; gap: 10px; height: 100%; min-height: 320px; }

@@ -36,7 +36,9 @@ export const api = {
   arrivals: (place, stopId) => get("/eta/arrivals", stopId ? { stop_id: stopId, limit: 14 } : { place, limit: 14 }),
   options: (route, stop) => get("/eta/options", { route, stop }),
   feedback: (predictionId, rating) => post("/feedback/", { prediction_id: predictionId, rating }),
-  diagnose: (routeId, clima, hora, dia) => get("/expert/diagnose", { route_id: routeId, clima, hora, dia }),
+  // `porQueNo`: una acción de la base; el diagnóstico explica qué faltó para recomendarla.
+  diagnose: (routeId, clima, hora, dia, porQueNo) =>
+    get("/expert/diagnose", { route_id: routeId, clima, hora, dia, por_que_no: porQueNo }),
   rules: () => get("/expert/rules"),
   weather: () => get("/demo/weather"),
   setWeather: (condition) => request(`/demo/weather?${q({ condition })}`, { method: "POST" }),

@@ -111,15 +111,31 @@ El simulador sigue el perfil del horario, así que favorece al método nuevo; la
 | Motor de inferencia | `core/expert/inference.py` | Encadenamiento hacia adelante, resolución de conflictos por prioridad y especificidad, factores de certeza, datos ausentes (`desconocido`) |
 | Explicación | `core/expert/system.py` | Cómo: la cadena de reglas detrás de cada acción y su motivo de fondo. ¿Por qué no?: qué condición faltó para recomendar otra acción |
 
+La pestaña Experto muestra el razonamiento completo:
+- **Base de hechos:** los datos que entraron al motor y lo que concluyó, con su certeza.
+- **Traza de inferencia:** ciclo por ciclo, qué regla se disparó, con qué premisas y qué concluyó; la cadena de la primera acción va resaltada.
+- **«¿Por qué no?»:** para cualquier acción que no se recomendó.
+
+El asistente responde lo mismo: «¿por qué no agregar unidades a la 231?».
+
 Criterios del diagnóstico:
 
-- **Una sola hora pico.** Si la frecuencia de la ruta cambia durante el día, manda la de la ruta; la hora pico de la ciudad solo se usa para rutas de frecuencia fija.
+- **Una sola hora pico.** Si la frecuencia de la ruta cambia durante el día, manda la de la ruta. La hora pico de la ciudad solo se usa para rutas de frecuencia fija y **solo en día laboral**: en fin de semana y festivo esas horas cuentan como valle.
 - **La demanda se mide frente a lo programado.** En la hora pico de una ruta que ya sube su frecuencia, la demanda está cubierta; solo la lluvia, la saturación o un pico que el horario no atiende piden más unidades. Al revés igual: si el horario ya baja el servicio en fin de semana, festivo o de noche, no se recortan más unidades.
 - **Una sola decisión de flota** (agregar o retirar). Sin conteo real recomienda lo que pide el horario; con conteo, la cifra coincide con la decisión: si la flota actual ya cumple, pasa a "mantener" y se explica.
-- **Sin servicio programado** solo se informa; no se recomiendan unidades, GPS ni ajustes al ETA.
+- **Sin servicio programado** solo se informa. Se avisan las incidencias, se sugiere otra ruta y se audita el horario, pero no hay alertas ni cambios de flota, GPS o ETA.
 - **Rutas alternas:** las que cubren al menos el 25 % de las paradas de la ruta, de la que más comparte a la que menos.
 
-En un barrido de 20,000 escenarios aleatorios se usan las 64 reglas y no aparece ninguna recomendación contradictoria.
+**Barrido reproducible.** `python scripts/barrido_experto.py --n 20000` corre escenarios aleatorios con semilla (`core/expert/escenarios.py`), revisa cinco invariantes de sentido y escribe [docs/barrido_experto.md](docs/barrido_experto.md). Las invariantes son:
+- nunca agregar y retirar a la vez;
+- nunca hora pico de la ciudad en día no laboral;
+- sin servicio, solo acciones permitidas;
+- sin servicio, ninguna acción de flota;
+- ningún «pico no cubierto» con demanda baja.
+
+Con la base 1.2 no hay ninguna violación y se usan las 64 reglas. La base 1.1 tenía 2,618, 67, 42 y 593. La integración continua corre 5,000 escenarios en cada cambio.
+
+**Validación con experto.** `python scripts/validacion_experto.py generar` arma un formulario con 12 escenarios para una persona con experiencia en la operación. `evaluar` calcula el acuerdo y el kappa de Cohen contra el sistema. Instrucciones en [docs/validacion/LEEME.md](docs/validacion/LEEME.md).
 
 ```bash
 curl "http://127.0.0.1:8000/expert/diagnose?route_id=231"
@@ -137,7 +153,10 @@ curl "http://127.0.0.1:8000/expert/rules"
 
 - **Mapa:** MapLibre GL JS 6.16 con el estilo oscuro de OpenFreeMap (sin clave). `MAP_STYLE_URL` permite otro proveedor. Si el estilo no carga, las rutas se dibujan sobre fondo liso.
 - **Animación:** las unidades se deslizan sobre la calle entre actualizaciones (canal en vivo `/map/ws`) y apuntan a su rumbo. La ruta elegida muestra flechas y un trazo que fluye en su sentido, y la parada elegida late. Con "reducir movimiento" activado en el sistema, todo queda quieto.
-- **Paneles:** buscador único (clave, número de siempre, nombre de sistema, parada o lugar) y pestañas Llegadas, Rutas, Experto, Operación y Asistente. En móvil el panel es una hoja inferior con tres alturas. Con varias paradas del mismo nombre, cada resultado abre la suya. Las esperas de más de una hora muestran la hora de llegada.
+- **Paneles:** buscador único (clave, número de siempre, nombre de sistema, parada o lugar) y pestañas Llegadas, Rutas, Experto, Operación y Asistente. En móvil el panel es una hoja inferior con tres alturas. Las esperas de más de una hora muestran la hora de llegada.
+- **Paradas con el mismo nombre:** el feed nombra las paradas por la calle donde están.
+  - En el buscador, cada resultado abre su propia parada.
+  - En la lista de una ruta, las paradas seguidas con el mismo nombre dicen «2 de 5 con este nombre · entre A y B».
 - **Peso:** 34 KB de código propio y 27 KB de datos iniciales, comprimidos. MapLibre (unos 440 KB) llega aparte desde el CDN.
 - **Asistente:** el mismo bot de WhatsApp (`bot/whatsapp_handler.py`), también en `/chat/message`. Entiende las mismas consultas que el buscador ("231 en CUCEI", "Línea 3 por Juárez"; `core/intents.py`).
 
@@ -155,7 +174,8 @@ curl "http://127.0.0.1:8000/expert/rules"
 | `WS /map/ws?compact=true` | Posiciones en vivo |
 | `POST /feedback/` | Calificar una predicción |
 | `GET /fleet/recommend?route_id=231&vehicles=20` | Flota necesaria; con `vehicles`, contra la flota en servicio |
-| `GET /expert/diagnose?route_id=231` | Diagnóstico del sistema experto |
+| `GET /expert/diagnose?route_id=231` | Diagnóstico del sistema experto (`clima`, `hora` y `dia` para escenarios; `por_que_no=` para explicar una acción) |
+| `GET /expert/rules` | Base de conocimiento: reglas, hechos iniciales y acciones |
 
 ---
 
@@ -163,12 +183,16 @@ curl "http://127.0.0.1:8000/expert/rules"
 
 ```bash
 pip install -r requirements-dev.txt
-pytest -q
-black --check api core tests scripts
+pytest -q                                    # 241 pruebas
+black --check api core tests scripts bot
 ruff check api core tests scripts bot
+python scripts/barrido_experto.py --n 20000  # termina con error si falla alguna invariante
 ```
 
-Las pruebas usan `tests/fixtures/gtfs_mini.zip`, un recorte del GTFS oficial con siete rutas reales (`python scripts/make_test_fixture.py` lo regenera). No hacen llamadas de red. La integración continua (`.github/workflows/python-app.yml`, en la raíz del repositorio, que es donde GitHub la busca) corre todo lo anterior dentro de `TransitGDL_CLEAN/` en cada push y pull request a `main`, y además construye la base desde el feed oficial.
+Las pruebas usan `tests/fixtures/gtfs_mini.zip`, un recorte del GTFS oficial con siete rutas reales (`python scripts/make_test_fixture.py` lo regenera). No hacen llamadas de red. La integración continua está en `.github/workflows/python-app.yml`, en la raíz del repositorio, que es donde GitHub la busca. En cada push y pull request a `main`, dentro de `TransitGDL_CLEAN/`:
+- corre todo lo anterior;
+- construye la base desde el feed oficial;
+- barre 5,000 escenarios del sistema experto.
 
 ---
 
@@ -179,8 +203,8 @@ api/        API (FastAPI) y rutas HTTP/WebSocket
 bot/        Asistente conversacional (WhatsApp y web)
 core/       Lógica: base de transporte, ETA, clima, incidencias, aprendizaje, flota, sistema experto, simulador
 data/       GTFS oficial, puntos de interés y bases locales
-docs/       Evaluación del ETA
-scripts/    Descarga de datos, construcción de la base, evaluación
+docs/       Evaluación del ETA, barrido del experto y validación con experto
+scripts/    Descarga de datos, construcción de la base, evaluación, barrido y validación
 static/     Interfaz web
 tests/      Pruebas
 ```

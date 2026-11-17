@@ -123,6 +123,7 @@ Criterios del diagnóstico:
 - **Una sola hora pico.** Si la frecuencia de la ruta cambia durante el día, manda la de la ruta. La hora pico de la ciudad solo se usa para rutas de frecuencia fija y **solo en día laboral**: en fin de semana y festivo esas horas cuentan como valle.
 - **La demanda se mide frente a lo programado.** En la hora pico de una ruta que ya sube su frecuencia, la demanda está cubierta; solo la lluvia, la saturación o un pico que el horario no atiende piden más unidades. Al revés igual: si el horario ya baja el servicio en fin de semana, festivo o de noche, no se recortan más unidades.
 - **Una sola decisión de flota** (agregar o retirar). Sin conteo real recomienda lo que pide el horario; con conteo, la cifra coincide con la decisión: si la flota actual ya cumple, pasa a "mantener" y se explica.
+- **Con mal clima no se retiran unidades.** Las tres reglas que deciden reducir la flota (R43, R44 y R49) exigen cielo despejado o nublado.
 - **Sin servicio programado** solo se informa. Se avisan las incidencias, se sugiere otra ruta y se audita el horario, pero no hay alertas ni cambios de flota, GPS o ETA.
 - **Rutas alternas:** las que cubren al menos el 25 % de las paradas de la ruta, de la que más comparte a la que menos.
 
@@ -133,7 +134,14 @@ Criterios del diagnóstico:
 - sin servicio, ninguna acción de flota;
 - ningún «pico no cubierto» con demanda baja.
 
-Con la base 1.2 no hay ninguna violación y se usan las 64 reglas. La base 1.1 tenía 2,618, 67, 42 y 593. La integración continua corre 5,000 escenarios en cada cambio.
+Con la base 1.3 no hay ninguna violación y se usan las 64 reglas. La base 1.1 tenía 2,618, 67, 42 y 593. La integración continua corre 5,000 escenarios en cada cambio.
+
+**Verificación sobre la red real.** `python scripts/verificacion_experto.py` diagnostica las 247 rutas en 4 tipos de día, 6 horas y 3 climas (17,784 diagnósticos con los hechos reales del GTFS) y escribe [docs/verificacion_experto.md](docs/verificacion_experto.md). Revisa tres cosas:
+- **Contradicciones y trazabilidad:** que ningún diagnóstico se contradiga y que cada acción traiga su cadena de reglas.
+- **Siete pruebas metamórficas:** un clima peor nunca baja la demanda ni mejora el servicio, con lluvia o tormenta nadie retira unidades, una incidencia grave siempre se avisa, etc.
+- **12 casos de aceptación:** cada uno con el resultado esperado escrito antes de correrlo.
+
+Con la base 1.3 no falla nada. Con la 1.2, la regla R49 retiraba unidades con lluvia o tormenta en 236 casos; la 1.3 le agregó la condición de buen clima.
 
 **Validación con experto.** `python scripts/validacion_experto.py generar` arma un formulario con 12 escenarios para una persona con experiencia en la operación. `evaluar` calcula el acuerdo y el kappa de Cohen contra el sistema. Instrucciones en [docs/validacion/LEEME.md](docs/validacion/LEEME.md).
 
@@ -183,10 +191,11 @@ curl "http://127.0.0.1:8000/expert/rules"
 
 ```bash
 pip install -r requirements-dev.txt
-pytest -q                                    # 241 pruebas
+pytest -q                                    # 242 pruebas; las que piden el servicio de "ahora" fijan un martes a las 12:30
 black --check api core tests scripts bot
 ruff check api core tests scripts bot
 python scripts/barrido_experto.py --n 20000  # termina con error si falla alguna invariante
+python scripts/verificacion_experto.py       # red real con el GTFS completo; termina con error si algo falla
 ```
 
 Las pruebas usan `tests/fixtures/gtfs_mini.zip`, un recorte del GTFS oficial con siete rutas reales (`python scripts/make_test_fixture.py` lo regenera). No hacen llamadas de red. La integración continua está en `.github/workflows/python-app.yml`, en la raíz del repositorio, que es donde GitHub la busca. En cada push y pull request a `main`, dentro de `TransitGDL_CLEAN/`:
@@ -203,8 +212,8 @@ api/        API (FastAPI) y rutas HTTP/WebSocket
 bot/        Asistente conversacional (WhatsApp y web)
 core/       Lógica: base de transporte, ETA, clima, incidencias, aprendizaje, flota, sistema experto, simulador
 data/       GTFS oficial, puntos de interés y bases locales
-docs/       Evaluación del ETA, barrido del experto y validación con experto
-scripts/    Descarga de datos, construcción de la base, evaluación, barrido y validación
+docs/       Evaluación del ETA, barrido y verificación del experto, y validación con experto
+scripts/    Descarga de datos, construcción de la base, evaluación, barrido, verificación y validación
 static/     Interfaz web
 tests/      Pruebas
 ```

@@ -467,7 +467,9 @@ def test_engine_feedback_loop_learns_a_constant_delay(gtfs_loader, tmp_path):
         engine._incident_store.close()
 
 
-def test_frequency_feedback_is_saved_but_not_learned(gtfs_loader, tmp_path):
+def test_frequency_feedback_is_saved_but_not_learned(
+    gtfs_loader, tmp_path, mediodia_laboral
+):
     """Con "pasa cada H min" la espera es aleatoria entre 0 y H: no es un sesgo."""
     engine = TransitEngine(
         TransitEngineConfig(

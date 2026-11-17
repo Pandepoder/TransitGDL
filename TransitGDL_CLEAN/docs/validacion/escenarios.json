@@ -1,0 +1,256 @@
+[
+ {
+  "id": "E01",
+  "ruta": "T15",
+  "nombre": "T15 (antes 231) · Prolongacion Alcalde",
+  "modo": "Camión",
+  "dia": "laboral",
+  "hora": 8,
+  "clima": "clear",
+  "frecuencia_min": 5.0,
+  "unidades_necesarias": 48,
+  "horario_reducido": false,
+  "sin_servicio": false,
+  "sistema": {
+   "nivel_demanda": "alta",
+   "decision_flota": "agregar",
+   "accion": "agregar_unidades",
+   "acciones": [
+    "agregar_unidades"
+   ]
+  }
+ },
+ {
+  "id": "E02",
+  "ruta": "T15",
+  "nombre": "T15 (antes 231) · Prolongacion Alcalde",
+  "modo": "Camión",
+  "dia": "laboral",
+  "hora": 14,
+  "clima": "rain",
+  "frecuencia_min": 5.0,
+  "unidades_necesarias": 57,
+  "horario_reducido": false,
+  "sin_servicio": false,
+  "sistema": {
+   "nivel_demanda": "alta",
+   "decision_flota": "agregar",
+   "accion": "agregar_unidades",
+   "acciones": [
+    "agregar_unidades",
+    "ampliar_ventana_eta"
+   ]
+  }
+ },
+ {
+  "id": "E03",
+  "ruta": "T15",
+  "nombre": "T15 (antes 231) · Prolongacion Alcalde",
+  "modo": "Camión",
+  "dia": "domingo",
+  "hora": 14,
+  "clima": "clear",
+  "frecuencia_min": 6.0,
+  "unidades_necesarias": 40,
+  "horario_reducido": false,
+  "sin_servicio": false,
+  "sistema": {
+   "nivel_demanda": "baja",
+   "decision_flota": "retirar",
+   "accion": "reducir_unidades",
+   "acciones": [
+    "reducir_unidades"
+   ]
+  }
+ },
+ {
+  "id": "E04",
+  "ruta": "T11B",
+  "nombre": "T11B (antes 55) · Rio Nilo - Guadalupe",
+  "modo": "Camión",
+  "dia": "laboral",
+  "hora": 19,
+  "clima": "thunderstorm",
+  "frecuencia_min": 7.0,
+  "unidades_necesarias": 45,
+  "horario_reducido": false,
+  "sin_servicio": false,
+  "sistema": {
+   "nivel_demanda": "critica",
+   "decision_flota": "agregar",
+   "accion": "emitir_alerta_operativa",
+   "acciones": [
+    "emitir_alerta_operativa",
+    "agregar_unidades",
+    "reducir_velocidad_operativa",
+    "ampliar_ventana_eta"
+   ]
+  }
+ },
+ {
+  "id": "E05",
+  "ruta": "T11B",
+  "nombre": "T11B (antes 55) · Rio Nilo - Guadalupe",
+  "modo": "Camión",
+  "dia": "sabado",
+  "hora": 11,
+  "clima": "clear",
+  "frecuencia_min": 10.0,
+  "unidades_necesarias": 24,
+  "horario_reducido": true,
+  "sin_servicio": false,
+  "sistema": {
+   "nivel_demanda": "normal",
+   "decision_flota": "mantener",
+   "accion": "ninguna",
+   "acciones": []
+  }
+ },
+ {
+  "id": "E06",
+  "ruta": "MT_L3",
+  "nombre": "Tren L3 · Linea 3 Arcos Zapopan - Central Camionera",
+  "modo": "Tren",
+  "dia": "laboral",
+  "hora": 8,
+  "clima": "rain",
+  "frecuencia_min": 7.0,
+  "unidades_necesarias": 11,
+  "horario_reducido": false,
+  "sin_servicio": false,
+  "sistema": {
+   "nivel_demanda": "normal",
+   "decision_flota": "mantener",
+   "accion": "ninguna",
+   "acciones": []
+  }
+ },
+ {
+  "id": "E07",
+  "ruta": "MT_L3",
+  "nombre": "Tren L3 · Linea 3 Arcos Zapopan - Central Camionera",
+  "modo": "Tren",
+  "dia": "festivo",
+  "hora": 19,
+  "clima": "clear",
+  "frecuencia_min": 7.0,
+  "unidades_necesarias": 11,
+  "horario_reducido": false,
+  "sin_servicio": false,
+  "sistema": {
+   "nivel_demanda": "baja",
+   "decision_flota": "retirar",
+   "accion": "reducir_unidades",
+   "acciones": [
+    "reducir_unidades"
+   ]
+  }
+ },
+ {
+  "id": "E08",
+  "ruta": "MC-L1",
+  "nombre": "MC-L1 · Mi Macro Calzada",
+  "modo": "Macrobús (BRT)",
+  "dia": "laboral",
+  "hora": 19,
+  "clima": "clear",
+  "frecuencia_min": 5.0,
+  "unidades_necesarias": 21,
+  "horario_reducido": true,
+  "sin_servicio": false,
+  "sistema": {
+   "nivel_demanda": "normal",
+   "decision_flota": "mantener",
+   "accion": "ninguna",
+   "acciones": []
+  }
+ },
+ {
+  "id": "E09",
+  "ruta": "MC-L1",
+  "nombre": "MC-L1 · Mi Macro Calzada",
+  "modo": "Macrobús (BRT)",
+  "dia": "domingo",
+  "hora": 23,
+  "clima": "clear",
+  "frecuencia_min": null,
+  "unidades_necesarias": null,
+  "horario_reducido": null,
+  "sin_servicio": true,
+  "sistema": {
+   "nivel_demanda": "normal",
+   "decision_flota": "mantener",
+   "accion": "informar_sin_servicio",
+   "acciones": [
+    "informar_sin_servicio"
+   ]
+  }
+ },
+ {
+  "id": "E10",
+  "ruta": "C38-V1",
+  "nombre": "C38-V1 (antes 615) · Vocacional - La Punta",
+  "modo": "Camión",
+  "dia": "laboral",
+  "hora": 14,
+  "clima": "thunderstorm",
+  "frecuencia_min": 9.0,
+  "unidades_necesarias": 27,
+  "horario_reducido": false,
+  "sin_servicio": false,
+  "sistema": {
+   "nivel_demanda": "critica",
+   "decision_flota": "agregar",
+   "accion": "emitir_alerta_operativa",
+   "acciones": [
+    "emitir_alerta_operativa",
+    "agregar_unidades",
+    "reducir_velocidad_operativa",
+    "ampliar_ventana_eta"
+   ]
+  }
+ },
+ {
+  "id": "E11",
+  "ruta": "T04A-1",
+  "nombre": "T04A-1 (antes 646) · Lazaro Cardenas",
+  "modo": "Camión",
+  "dia": "laboral",
+  "hora": 23,
+  "clima": "clear",
+  "frecuencia_min": null,
+  "unidades_necesarias": null,
+  "horario_reducido": null,
+  "sin_servicio": true,
+  "sistema": {
+   "nivel_demanda": "normal",
+   "decision_flota": "mantener",
+   "accion": "informar_sin_servicio",
+   "acciones": [
+    "informar_sin_servicio"
+   ]
+  }
+ },
+ {
+  "id": "E12",
+  "ruta": "T04A-1",
+  "nombre": "T04A-1 (antes 646) · Lazaro Cardenas",
+  "modo": "Camión",
+  "dia": "sabado",
+  "hora": 8,
+  "clima": "rain",
+  "frecuencia_min": 3.0,
+  "unidades_necesarias": 69,
+  "horario_reducido": false,
+  "sin_servicio": false,
+  "sistema": {
+   "nivel_demanda": "alta",
+   "decision_flota": "agregar",
+   "accion": "agregar_unidades",
+   "acciones": [
+    "agregar_unidades",
+    "ampliar_ventana_eta"
+   ]
+  }
+ }
+]

@@ -102,7 +102,7 @@ export class ArrivalsPane {
             const context = stopContext(stops, i);
             return `
             <button type="button" class="row" data-stop="${esc(s.stop_id)}">
-              <span class="row-main"><span class="row-title">${esc(s.stop_name)}</span>${context ? `<span class="row-sub">${esc(context)}</span>` : ""}</span>
+              <span class="row-main"><span class="row-title">${esc(s.stop_name)}</span>${context ? `<span class="row-sub row-sub--wrap">${esc(context)}</span>` : ""}</span>
               <span class="small muted">${s.sequence + 1}</span>
             </button>`;
           }).join("")}

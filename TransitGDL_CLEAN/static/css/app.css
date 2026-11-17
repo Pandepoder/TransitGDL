@@ -253,7 +253,8 @@ svg { flex-shrink: 0; }
 
 /* Módulo de explicación: "¿por qué no?", base de hechos y traza de inferencia. */
 .why-not { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; padding: 12px; border-radius: 10px; background: var(--bg); }
-.why-not .field { flex: 1 1 220px; }
+.why-not .field { flex: 1 1 220px; min-width: 0; }
+.why-not .field select { width: 100%; min-width: 0; text-overflow: ellipsis; }
 .why-not #ex-whynot-out { flex-basis: 100%; }
 .why-not-list { margin: 4px 0 0 18px; padding: 0; color: var(--text-2); line-height: 1.5; }
 .why-not-list li { margin-bottom: 6px; overflow-wrap: anywhere; }
@@ -269,6 +270,7 @@ svg { flex-shrink: 0; }
 .trace-list li { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; border-radius: 8px; border-left: 3px solid var(--line); background: var(--card); color: var(--text-2); overflow-wrap: anywhere; }
 .trace-list li.is-chain { border-left-color: var(--accent); }
 .trace-head { color: var(--text); }
+.row-sub--wrap { white-space: normal; overflow: visible; text-overflow: clip; }
 .trace-then { color: var(--text); }
 
 /* ── Asistente ──────────────────────────────────────────────────────────── */

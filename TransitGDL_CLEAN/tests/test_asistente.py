@@ -61,6 +61,30 @@ def test_bot_and_search_understand_line_names(engine, gtfs_loader):
     assert gtfs_loader.find_routes("Línea 3")[0].route_id == "MT_L3"
 
 
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("¿Por qué no agregar unidades a la 231?", ("agregar_unidades", "231")),
+        ("por que no retirar unidades de la T15", ("reducir_unidades", "T15")),
+        ("¿Por qué no hay alerta en la 646?", ("emitir_alerta_operativa", "646")),
+        ("por qué no sugerir ruta alterna para L3", ("sugerir_ruta_alterna", "L3")),
+        ("por que no reforzar frecuencia de la 55", ("reforzar_frecuencia", "55")),
+        ("por qué no", None),
+        ("¿Cuánto falta la 231 en CUCEI?", None),
+    ],
+)
+def test_bot_parses_why_not_questions(text, expected):
+    lower = ConversationHandler._normalize_text(text)
+    assert ConversationHandler._parse_why_not(lower, text) == expected
+
+
+def test_bot_explains_why_not_with_the_expert(engine):
+    (reply,) = _chat(engine, "¿Por qué no agregar unidades a la 231?")
+    assert "¿Por qué no «agregar unidades a la ruta»?" in reply
+    assert "R61 · Agregar unidades" in reply
+    assert "No entendí" not in reply
+
+
 def test_bot_tells_branches_apart_by_destination(engine):
     (reply,) = _chat(engine, "646")
     assert "T04A-1* — Vallarta Patria ⇄ Tonalá Centro" in reply

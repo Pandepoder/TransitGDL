@@ -37,7 +37,7 @@
 #    está atendida y no se recorta otra vez.
 # ─────────────────────────────────────────────────────────────────────────────
 
-version: "1.1"
+version: "1.2"
 
 hechos_iniciales:
   clima: "Condición climática: clear, cloudy, rain, thunderstorm, fog, snow, unknown"
@@ -88,35 +88,43 @@ acciones:
 
 reglas:
   # ── Estrato 100 · Clasificación del contexto ───────────────────────────────
+  # Las horas pico de la ciudad son de los días laborales: en fin de semana y
+  # festivo no hay entradas a escuelas y trabajos, y esas horas cuentan como valle.
   - id: R01
     nombre: Pico matutino
     prioridad: 100
     si:
       - {hecho: hora, op: en, valor: [7, 8, 9]}
+      - {hecho: es_fin_de_semana, valor: false}
+      - {hecho: es_festivo, valor: false}
     entonces:
       - {hecho: hora_pico_general, valor: true}
       - {hecho: periodo, valor: pico_matutino}
-    explicacion: Entre 7 y 9 h coinciden las entradas a escuelas y trabajos.
+    explicacion: En día laboral, entre 7 y 9 h coinciden las entradas a escuelas y trabajos.
 
   - id: R02
     nombre: Pico de mediodía
     prioridad: 100
     si:
       - {hecho: hora, op: en, valor: [13, 14, 15]}
+      - {hecho: es_fin_de_semana, valor: false}
+      - {hecho: es_festivo, valor: false}
     entonces:
       - {hecho: hora_pico_general, valor: true}
       - {hecho: periodo, valor: pico_mediodia}
-    explicacion: Entre 13 y 15 h salen los turnos escolares y es la hora de comida.
+    explicacion: En día laboral, entre 13 y 15 h salen los turnos escolares y es la hora de comida.
 
   - id: R03
     nombre: Pico vespertino
     prioridad: 100
     si:
       - {hecho: hora, op: en, valor: [18, 19, 20]}
+      - {hecho: es_fin_de_semana, valor: false}
+      - {hecho: es_festivo, valor: false}
     entonces:
       - {hecho: hora_pico_general, valor: true}
       - {hecho: periodo, valor: pico_vespertino}
-    explicacion: Entre 18 y 20 h se concentra el regreso a casa.
+    explicacion: En día laboral, entre 18 y 20 h se concentra el regreso a casa.
 
   - id: R04
     nombre: Horario nocturno
@@ -132,10 +140,16 @@ reglas:
     nombre: Horario valle
     prioridad: 100
     si:
+      - {hecho: hora, op: en, valor: [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21]}
+    si_alguna:
       - {hecho: hora, op: en, valor: [5, 6, 10, 11, 12, 16, 17, 21]}
+      - {hecho: es_fin_de_semana, valor: true}
+      - {hecho: es_festivo, valor: true}
     entonces:
       - {hecho: periodo, valor: valle}
-    explicacion: Entre los picos la demanda baja y se estabiliza.
+    explicacion: >-
+      Entre los picos de un día laboral, y todo el día en fines de semana y
+      festivos, la demanda baja y se estabiliza.
 
   - id: R05
     nombre: Lluvia
@@ -584,6 +598,7 @@ reglas:
       - {hecho: flota_excedente, valor: true}
       - {hecho: es_hora_pico_ruta, valor: false}
       - {hecho: clima, op: en, valor: [clear, cloudy]}
+      - {hecho: sin_servicio_programado, op: desconocido}
     entonces:
       - {hecho: decision_flota, valor: reducir}
     explicacion: Fuera de la hora pico de la ruta y con buen clima, las unidades de más pueden reasignarse.
@@ -597,6 +612,7 @@ reglas:
       - {hecho: es_hora_pico_ruta, op: desconocido}
       - {hecho: periodo, op: en, valor: [valle, nocturno]}
       - {hecho: clima, op: en, valor: [clear, cloudy]}
+      - {hecho: sin_servicio_programado, op: desconocido}
     entonces:
       - {hecho: decision_flota, valor: reducir}
     explicacion: >-
@@ -609,6 +625,7 @@ reglas:
     prioridad: 20
     si:
       - {hecho: nivel_demanda, valor: critica}
+      - {hecho: sin_servicio_programado, op: desconocido}
     entonces:
       - {hecho: accion, valor: emitir_alerta_operativa}
     explicacion: Con demanda crítica el centro de control debe intervenir.

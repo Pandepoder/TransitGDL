@@ -19,6 +19,24 @@ const FEATURED = [
   { query: "L3 en Cucei", label: "Tren L3 en Cucei" },
 ];
 const PLACES = ["CUCEI", "Tonalá Centro", "Glorieta Minerva", "Central Nueva"];
+
+/**
+ * El feed nombra las paradas por la calle donde están, así que hay tramos con
+ * varias paradas seguidas del mismo nombre. Para distinguirlas: su lugar en el
+ * tramo y las paradas vecinas con otro nombre ("2 de 5 · entre A y B").
+ */
+function stopContext(stops, i) {
+  const name = stops[i].stop_name;
+  let first = i;
+  while (first > 0 && stops[first - 1].stop_name === name) first -= 1;
+  let last = i;
+  while (last < stops.length - 1 && stops[last + 1].stop_name === name) last += 1;
+  if (first === last) return "";
+  const before = first > 0 ? stops[first - 1].stop_name : null;
+  const after = last < stops.length - 1 ? stops[last + 1].stop_name : null;
+  const place = before && after ? `entre ${before} y ${after}` : before ? `después de ${before}` : after ? `antes de ${after}` : "";
+  return [`${i - first + 1} de ${last - first + 1} con este nombre`, place].filter(Boolean).join(" · ");
+}
 const RATINGS = [
   { rating: 1, label: "Antes" },
   { rating: 2, label: "A tiempo" },
@@ -80,11 +98,14 @@ export class ArrivalsPane {
       <div>
         <h2 class="section-title">Elige tu parada <span class="muted">· ${stops.length} paradas, ${path.length_km} km</span></h2>
         <div class="list" style="margin-top:6px">
-          ${stops.map((s) => `
+          ${stops.map((s, i) => {
+            const context = stopContext(stops, i);
+            return `
             <button type="button" class="row" data-stop="${esc(s.stop_id)}">
-              <span class="row-main"><span class="row-title">${esc(s.stop_name)}</span></span>
+              <span class="row-main"><span class="row-title">${esc(s.stop_name)}</span>${context ? `<span class="row-sub row-sub--wrap">${esc(context)}</span>` : ""}</span>
               <span class="small muted">${s.sequence + 1}</span>
-            </button>`).join("")}
+            </button>`;
+          }).join("")}
         </div>
       </div>`;
   }

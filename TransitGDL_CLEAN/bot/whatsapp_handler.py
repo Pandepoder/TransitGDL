@@ -327,6 +327,11 @@ class ConversationHandler:
             await self._save_session(sender, session)
             return await self._expert_diagnosis(text.split(" ", 1)[1])
 
+        why_not = self._parse_why_not(lower, text)
+        if why_not:
+            await self._save_session(sender, session)
+            return await self._expert_why_not(*why_not)
+
         # "231 en CUCEI", "la 646 hacia Tonalá": la misma forma que entiende la web.
         intent = parse_route_at_stop(text)
         if intent is not None and self._route_variants(intent.route):
@@ -421,6 +426,55 @@ class ConversationHandler:
             return "No encontré esa ruta para diagnosticar. Ejemplo: *diagnostico 646*"
         return diagnostico.to_chat_message()
 
+    # Palabras del usuario → acción de la base de conocimiento.
+    WHY_NOT_ACTIONS = (
+        (("contingencia",), "activar_plan_contingencia"),
+        (("alterna",), "sugerir_ruta_alterna"),
+        (("alerta", "alertar"), "emitir_alerta_operativa"),
+        (("gps",), "verificar_gps"),
+        (("velocidad",), "reducir_velocidad_operativa"),
+        (("frecuencia",), "reforzar_frecuencia"),
+        (("retirar", "reducir", "quitar", "menos"), "reducir_unidades"),
+        (("agregar", "aumentar", "reforzar", "mas unidades"), "agregar_unidades"),
+    )
+
+    @classmethod
+    def _parse_why_not(cls, lower: str, text: str) -> Optional[tuple[str, str]]:
+        """'¿Por qué no agregar unidades a la 231?' → ('agregar_unidades', '231')."""
+        cleaned = lower.strip(" ¿?¡!.")
+        match = re.match(r"^por ?que no (.+)$", cleaned)
+        if not match:
+            return None
+        words = text.strip(" ¿?¡!.").split()
+        if len(words) < 4:
+            return None
+        route = words[-1]
+        wish = match.group(1)
+        for keywords, action in cls.WHY_NOT_ACTIONS:
+            if any(k in wish for k in keywords):
+                return action, route
+        return None
+
+    async def _expert_why_not(self, action: str, route_text: str) -> str:
+        route_id = self._resolve_route_input(route_text)
+        diagnostico = (
+            await self.engine.diagnose_route(route_id, por_que_no=action)
+            if route_id
+            else None
+        )
+        if diagnostico is None:
+            return "No encontré esa ruta. Ejemplo: *por qué no agregar 231*"
+        descripcion = self.engine.expert.base.acciones.get(action, action)
+        nombre = diagnostico.route_name or route_text
+        lineas = [
+            f"*¿Por qué no «{descripcion.lower()}»?* · ruta {nombre}",
+            f"Ahora: demanda *{diagnostico.nivel_demanda}*, "
+            f"servicio *{diagnostico.estado_servicio}*.",
+            "",
+        ]
+        lineas += [f"· {linea}" for linea in diagnostico.por_que_no]
+        return "\n".join(lineas)
+
     @staticmethod
     def _looks_like_greeting(text: str) -> bool:
         return any(word in text for word in ["hola", "buenas", "hey", "saludos"])
@@ -445,6 +499,8 @@ class ConversationHandler:
                 "incidencia",
                 "diagnostico",
                 "experto",
+                "por que no",
+                "porque no",
             ]
         ):
             return True
@@ -549,7 +605,8 @@ class ConversationHandler:
             "· *231* → luego escribe la parada\n"
             "· *¿Cuánto falta la 231 en CUCEI?*\n"
             "· *¿Qué rutas pasan por CUCEI?*\n"
-            "· *Minerva* (lista rutas)\n\n"
+            "· *Minerva* (lista rutas)\n"
+            "· *diagnostico 231* y *¿por qué no agregar unidades a la 231?*\n\n"
             "Acepto la clave oficial (*T15*) o el número anterior (*231*). "
             "Prueba con *231*, *55*, *615* o *646*."
         )

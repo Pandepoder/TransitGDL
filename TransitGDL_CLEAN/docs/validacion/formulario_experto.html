@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><title>Validación con experto · TransitGDL</title>
+<style>
+  body { font-family: Calibri, Arial, sans-serif; color: #1b2430; margin: 32px; font-size: 13px; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .intro { max-width: 760px; line-height: 1.5; }
+  .datos { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px 24px; margin: 16px 0 20px; max-width: 760px; }
+  .datos div { border-bottom: 1px solid #8a96a3; padding-bottom: 2px; }
+  .esc { border: 1px solid #c3cbd5; border-radius: 8px; padding: 12px 16px; margin-bottom: 14px; page-break-inside: avoid; max-width: 760px; }
+  .esc h2 { font-size: 15px; margin: 0 0 4px; }
+  .ctx { margin: 0 0 8px; color: #3c4a5a; }
+  .preg { margin: 6px 0; }
+  .preg b { display: block; margin-bottom: 3px; }
+  .op { display: inline-flex; align-items: center; gap: 5px; margin: 2px 16px 2px 0; }
+  .box { width: 12px; height: 12px; border: 1.5px solid #1b2430; border-radius: 2px; display: inline-block; }
+  .linea { border-bottom: 1px solid #8a96a3; height: 20px; }
+  @media print { body { margin: 12mm; } }
+</style></head>
+<body>
+  <h1>Validación del sistema experto TransitGDL</h1>
+  <p class="intro">Gracias por su ayuda. Para cada situación, marque lo que usted esperaría y lo que haría si
+  estuviera a cargo de la ruta. No hay respuestas correctas: nos interesa su criterio. Responda con lo que sabe
+  de la operación; si una situación no aplica, déjela en blanco. Toma unos 15 minutos.</p>
+  <div class="datos"><div>Nombre:</div><div>Puesto:</div><div>Años de experiencia:</div><div>Fecha:</div></div>
+  
+      <section class="esc">
+        <h2>E01 · Ruta T15</h2>
+        <p class="ctx">Camión · T15 (antes 231) · Prolongacion Alcalde<br>Entre semana, 08:00 · Despejado<br>Pasa cada 5 min según el horario oficial<br>El horario pide 48 unidades</p>
+        <div class="preg"><b>1. ¿Cómo estará la demanda frente a lo que programa el horario?</b><label class="op"><span class="box"></span>Baja</label><label class="op"><span class="box"></span>Normal</label><label class="op"><span class="box"></span>Alta</label><label class="op"><span class="box"></span>Crítica</label></div>
+        <div class="preg"><b>2. ¿Qué haría con la flota?</b><label class="op"><span class="box"></span>Agregar unidades</label><label class="op"><span class="box"></span>Mantener</label><label class="op"><span class="box"></span>Retirar unidades</label></div>
+        <div class="preg"><b>3. ¿Cuál sería su acción principal?</b><label class="op"><span class="box"></span>Ninguna</label><label class="op"><span class="box"></span>Agregar unidades a la ruta</label><label class="op"><span class="box"></span>Retirar unidades y reasignarlas a rutas con más demanda</label><label class="op"><span class="box"></span>Reducir el intervalo entre unidades</label><label class="op"><span class="box"></span>Emitir alerta operativa al centro de control</label><label class="op"><span class="box"></span>Operar a velocidad reducida por seguridad</label><label class="op"><span class="box"></span>Sugerir una ruta alterna a los usuarios</label><label class="op"><span class="box"></span>Ampliar la ventana del ETA y bajar su confianza</label><label class="op"><span class="box"></span>Informar a los usuarios que la ruta no opera a esta hora</label></div>
+        <div class="preg"><b>Comentario</b><div class="linea"></div><div class="linea"></div></div>
+      </section>
+      <section class="esc">
+        <h2>E02 · Ruta T15</h2>
+        <p class="ctx">Camión · T15 (antes 231) · Prolongacion Alcalde<br>Entre semana, 14:00 · Lluvia<br>Pasa cada 5 min según el horario oficial<br>El horario pide 57 unidades</p>
+        <div class="preg"><b>1. ¿Cómo estará la demanda frente a lo que programa el horario?</b><label class="op"><span class="box"></span>Baja</label><label class="op"><span class="box"></span>Normal</label><label class="op"><span class="box"></span>Alta</label><label class="op"><span class="box"></span>Crítica</label></div>
+        <div class="preg"><b>2. ¿Qué haría con la flota?</b><label class="op"><span class="box"></span>Agregar unidades</label><label class="op"><span class="box"></span>Mantener</label><label class="op"><span class="box"></span>Retirar unidades</label></div>
+        <div class="preg"><b>3. ¿Cuál sería su acción principal?</b><label class="op"><span class="box"></span>Ninguna</label><label class="op"><span class="box"></span>Agregar unidades a la ruta</label><label class="op"><span class="box"></span>Retirar unidades y reasignarlas a rutas con más demanda</label><label class="op"><span class="box"></span>Reducir el intervalo entre unidades</label><label class="op"><span class="box"></span>Emitir alerta operativa al centro de control</label><label class="op"><span class="box"></span>Operar a velocidad reducida por seguridad</label><label class="op"><span class="box"></span>Sugerir una ruta alterna a los usuarios</label><label class="op"><span class="box"></span>Ampliar la ventana del ETA y bajar su confianza</label><label class="op"><span class="box"></span>Informar a los usuarios que la ruta no opera a esta hora</label></div>
+        <div class="preg"><b>Comentario</b><div class="linea"></div><div class="linea"></div></div>
+      </section>
+      <section class="esc">
+        <h2>E03 · Ruta T15</h2>
+        <p class="ctx">Camión · T15 (antes 231) · Prolongacion Alcalde<br>Domingo, 14:00 · Despejado<br>Pasa cada 6 min según el horario oficial<br>El horario pide 40 unidades</p>
+        <div class="preg"><b>1. ¿Cómo estará la demanda frente a lo que programa el horario?</b><label class="op"><span class="box"></span>Baja</label><label class="op"><span class="box"></span>Normal</label><label class="op"><span class="box"></span>Alta</label><label class="op"><span class="box"></span>Crítica</label></div>
+        <div class="preg"><b>2. ¿Qué haría con la flota?</b><label class="op"><span class="box"></span>Agregar unidades</label><label class="op"><span class="box"></span>Mantener</label><label class="op"><span class="box"></span>Retirar unidades</label></div>
+        <div class="preg"><b>3. ¿Cuál sería su acción principal?</b><label class="op"><span class="box"></span>Ninguna</label><label class="op"><span class="box"></span>Agregar unidades a la ruta</label><label class="op"><span class="box"></span>Retirar unidades y reasignarlas a rutas con más demanda</label><label class="op"><span class="box"></span>Reducir el intervalo entre unidades</label><label class="op"><span class="box"></span>Emitir alerta operativa al centro de control</label><label class="op"><span class="box"></span>Operar a velocidad reducida por seguridad</label><label class="op"><span class="box"></span>Sugerir una ruta alterna a los usuarios</label><label class="op"><span class="box"></span>Ampliar la ventana del ETA y bajar su confianza</label><label class="op"><span class="box"></span>Informar a los usuarios que la ruta no opera a esta hora</label></div>
+        <div class="preg"><b>Comentario</b><div class="linea"></div><div class="linea"></div></div>
+      </section>
+      <section class="esc">
+        <h2>E04 · Ruta T11B</h2>
+        <p class="ctx">Camión · T11B (antes 55) · Rio Nilo - Guadalupe<br>Entre semana, 19:00 · Tormenta<br>Pasa cada 7 min según el horario oficial<br>El horario pide 45 unidades</p>
+        <div class="preg"><b>1. ¿Cómo estará la demanda frente a lo que programa el horario?</b><label class="op"><span class="box"></span>Baja</label><label class="op"><span class="box"></span>Normal</label><label class="op"><span class="box"></span>Alta</label><label class="op"><span class="box"></span>Crítica</label></div>
+        <div class="preg"><b>2. ¿Qué haría con la flota?</b><label class="op"><span class="box"></span>Agregar unidades</label><label class="op"><span class="box"></span>Mantener</label><label class="op"><span class="box"></span>Retirar unidades</label></div>
+        <div class="preg"><b>3. ¿Cuál sería su acción principal?</b><label class="op"><span class="box"></span>Ninguna</label><label class="op"><span class="box"></span>Agregar unidades a la ruta</label><label class="op"><span class="box"></span>Retirar unidades y reasignarlas a rutas con más demanda</label><label class="op"><span class="box"></span>Reducir el intervalo entre unidades</label><label class="op"><span class="box"></span>Emitir alerta operativa al centro de control</label><label class="op"><span class="box"></span>Operar a velocidad reducida por seguridad</label><label class="op"><span class="box"></span>Sugerir una ruta alterna a los usuarios</label><label class="op"><span class="box"></span>Ampliar la ventana del ETA y bajar su confianza</label><label class="op"><span class="box"></span>Informar a los usuarios que la ruta no opera a esta hora</label></div>
+        <div class="preg"><b>Comentario</b><div class="linea"></div><div class="linea"></div></div>
+      </section>
+      <section class="esc">
+        <h2>E05 · Ruta T11B</h2>
+        <p class="ctx">Camión · T11B (antes 55) · Rio Nilo - Guadalupe<br>Sábado, 11:00 · Despejado<br>Pasa cada 10 min según el horario oficial<br>El horario pide 24 unidades</p>
+        <div class="preg"><b>1. ¿Cómo estará la demanda frente a lo que programa el horario?</b><label class="op"><span class="box"></span>Baja</label><label class="op"><span class="box"></span>Normal</label><label class="op"><span class="box"></span>Alta</label><label class="op"><span class="box"></span>Crítica</label></div>
+        <div class="preg"><b>2. ¿Qué haría con la flota?</b><label class="op"><span class="box"></span>Agregar unidades</label><label class="op"><span class="box"></span>Mantener</label><label class="op"><span class="box"></span>Retirar unidades</label></div>
+        <div class="preg"><b>3. ¿Cuál sería su acción principal?</b><label class="op"><span class="box"></span>Ninguna</label><label class="op"><span class="box"></span>Agregar unidades a la ruta</label><label class="op"><span class="box"></span>Retirar unidades y reasignarlas a rutas con más demanda</label><label class="op"><span class="box"></span>Reducir el intervalo entre unidades</label><label class="op"><span class="box"></span>Emitir alerta operativa al centro de control</label><label class="op"><span class="box"></span>Operar a velocidad reducida por seguridad</label><label class="op"><span class="box"></span>Sugerir una ruta alterna a los usuarios</label><label class="op"><span class="box"></span>Ampliar la ventana del ETA y bajar su confianza</label><label class="op"><span class="box"></span>Informar a los usuarios que la ruta no opera a esta hora</label></div>
+        <div class="preg"><b>Comentario</b><div class="linea"></div><div class="linea"></div></div>
+      </section>
+      <section class="esc">
+        <h2>E06 · Ruta MT_L3</h2>
+        <p class="ctx">Tren · Tren L3 · Linea 3 Arcos Zapopan - Central Camionera<br>Entre semana, 08:00 · Lluvia<br>Pasa cada 7 min según el horario oficial<br>El horario pide 11 unidades</p>
+        <div class="preg"><b>1. ¿Cómo estará la demanda frente a lo que programa el horario?</b><label class="op"><span class="box"></span>Baja</label><label class="op"><span class="box"></span>Normal</label><label class="op"><span class="box"></span>Alta</label><label class="op"><span class="box"></span>Crítica</label></div>
+        <div class="preg"><b>2. ¿Qué haría con la flota?</b><label class="op"><span class="box"></span>Agregar unidades</label><label class="op"><span class="box"></span>Mantener</label><label class="op"><span class="box"></span>Retirar unidades</label></div>
+        <div class="preg"><b>3. ¿Cuál sería su acción principal?</b><label class="op"><span class="box"></span>Ninguna</label><label class="op"><span class="box"></span>Agregar unidades a la ruta</label><label class="op"><span class="box"></span>Retirar unidades y reasignarlas a rutas con más demanda</label><label class="op"><span class="box"></span>Reducir el intervalo entre unidades</label><label class="op"><span class="box"></span>Emitir alerta operativa al centro de control</label><label class="op"><span class="box"></span>Operar a velocidad reducida por seguridad</label><label class="op"><span class="box"></span>Sugerir una ruta alterna a los usuarios</label><label class="op"><span class="box"></span>Ampliar la ventana del ETA y bajar su confianza</label><label class="op"><span class="box"></span>Informar a los usuarios que la ruta no opera a esta hora</label></div>
+        <div class="preg"><b>Comentario</b><div class="linea"></div><div class="linea"></div></div>
+      </section>
+      <section class="esc">
+        <h2>E07 · Ruta MT_L3</h2>
+        <p class="ctx">Tren · Tren L3 · Linea 3 Arcos Zapopan - Central Camionera<br>Día festivo, 19:00 · Despejado<br>Pasa cada 7 min según el horario oficial<br>El horario pide 11 unidades</p>
+        <div class="preg"><b>1. ¿Cómo estará la demanda frente a lo que programa el horario?</b><label class="op"><span class="box"></span>Baja</label><label class="op"><span class="box"></span>Normal</label><label class="op"><span class="box"></span>Alta</label><label class="op"><span class="box"></span>Crítica</label></div>
+        <div class="preg"><b>2. ¿Qué haría con la flota?</b><label class="op"><span class="box"></span>Agregar unidades</label><label class="op"><span class="box"></span>Mantener</label><label class="op"><span class="box"></span>Retirar unidades</label></div>
+        <div class="preg"><b>3. ¿Cuál sería su acción principal?</b><label class="op"><span class="box"></span>Ninguna</label><label class="op"><span class="box"></span>Agregar unidades a la ruta</label><label class="op"><span class="box"></span>Retirar unidades y reasignarlas a rutas con más demanda</label><label class="op"><span class="box"></span>Reducir el intervalo entre unidades</label><label class="op"><span class="box"></span>Emitir alerta operativa al centro de control</label><label class="op"><span class="box"></span>Operar a velocidad reducida por seguridad</label><label class="op"><span class="box"></span>Sugerir una ruta alterna a los usuarios</label><label class="op"><span class="box"></span>Ampliar la ventana del ETA y bajar su confianza</label><label class="op"><span class="box"></span>Informar a los usuarios que la ruta no opera a esta hora</label></div>
+        <div class="preg"><b>Comentario</b><div class="linea"></div><div class="linea"></div></div>
+      </section>
+      <section class="esc">
+        <h2>E08 · Ruta MC-L1</h2>
+        <p class="ctx">Macrobús (BRT) · MC-L1 · Mi Macro Calzada<br>Entre semana, 19:00 · Despejado<br>Pasa cada 5 min según el horario oficial<br>El horario pide 21 unidades</p>
+        <div class="preg"><b>1. ¿Cómo estará la demanda frente a lo que programa el horario?</b><label class="op"><span class="box"></span>Baja</label><label class="op"><span class="box"></span>Normal</label><label class="op"><span class="box"></span>Alta</label><label class="op"><span class="box"></span>Crítica</label></div>
+        <div class="preg"><b>2. ¿Qué haría con la flota?</b><label class="op"><span class="box"></span>Agregar unidades</label><label class="op"><span class="box"></span>Mantener</label><label class="op"><span class="box"></span>Retirar unidades</label></div>
+        <div class="preg"><b>3. ¿Cuál sería su acción principal?</b><label class="op"><span class="box"></span>Ninguna</label><label class="op"><span class="box"></span>Agregar unidades a la ruta</label><label class="op"><span class="box"></span>Retirar unidades y reasignarlas a rutas con más demanda</label><label class="op"><span class="box"></span>Reducir el intervalo entre unidades</label><label class="op"><span class="box"></span>Emitir alerta operativa al centro de control</label><label class="op"><span class="box"></span>Operar a velocidad reducida por seguridad</label><label class="op"><span class="box"></span>Sugerir una ruta alterna a los usuarios</label><label class="op"><span class="box"></span>Ampliar la ventana del ETA y bajar su confianza</label><label class="op"><span class="box"></span>Informar a los usuarios que la ruta no opera a esta hora</label></div>
+        <div class="preg"><b>Comentario</b><div class="linea"></div><div class="linea"></div></div>
+      </section>
+      <section class="esc">
+        <h2>E09 · Ruta MC-L1</h2>
+        <p class="ctx">Macrobús (BRT) · MC-L1 · Mi Macro Calzada<br>Domingo, 23:00 · Despejado<br>La ruta no tiene salidas programadas a esa hora</p>
+        <div class="preg"><b>1. ¿Cómo estará la demanda frente a lo que programa el horario?</b><label class="op"><span class="box"></span>Baja</label><label class="op"><span class="box"></span>Normal</label><label class="op"><span class="box"></span>Alta</label><label class="op"><span class="box"></span>Crítica</label></div>
+        <div class="preg"><b>2. ¿Qué haría con la flota?</b><label class="op"><span class="box"></span>Agregar unidades</label><label class="op"><span class="box"></span>Mantener</label><label class="op"><span class="box"></span>Retirar unidades</label></div>
+        <div class="preg"><b>3. ¿Cuál sería su acción principal?</b><label class="op"><span class="box"></span>Ninguna</label><label class="op"><span class="box"></span>Agregar unidades a la ruta</label><label class="op"><span class="box"></span>Retirar unidades y reasignarlas a rutas con más demanda</label><label class="op"><span class="box"></span>Reducir el intervalo entre unidades</label><label class="op"><span class="box"></span>Emitir alerta operativa al centro de control</label><label class="op"><span class="box"></span>Operar a velocidad reducida por seguridad</label><label class="op"><span class="box"></span>Sugerir una ruta alterna a los usuarios</label><label class="op"><span class="box"></span>Ampliar la ventana del ETA y bajar su confianza</label><label class="op"><span class="box"></span>Informar a los usuarios que la ruta no opera a esta hora</label></div>
+        <div class="preg"><b>Comentario</b><div class="linea"></div><div class="linea"></div></div>
+      </section>
+      <section class="esc">
+        <h2>E10 · Ruta C38-V1</h2>
+        <p class="ctx">Camión · C38-V1 (antes 615) · Vocacional - La Punta<br>Entre semana, 14:00 · Tormenta<br>Pasa cada 9 min según el horario oficial<br>El horario pide 27 unidades</p>
+        <div class="preg"><b>1. ¿Cómo estará la demanda frente a lo que programa el horario?</b><label class="op"><span class="box"></span>Baja</label><label class="op"><span class="box"></span>Normal</label><label class="op"><span class="box"></span>Alta</label><label class="op"><span class="box"></span>Crítica</label></div>
+        <div class="preg"><b>2. ¿Qué haría con la flota?</b><label class="op"><span class="box"></span>Agregar unidades</label><label class="op"><span class="box"></span>Mantener</label><label class="op"><span class="box"></span>Retirar unidades</label></div>
+        <div class="preg"><b>3. ¿Cuál sería su acción principal?</b><label class="op"><span class="box"></span>Ninguna</label><label class="op"><span class="box"></span>Agregar unidades a la ruta</label><label class="op"><span class="box"></span>Retirar unidades y reasignarlas a rutas con más demanda</label><label class="op"><span class="box"></span>Reducir el intervalo entre unidades</label><label class="op"><span class="box"></span>Emitir alerta operativa al centro de control</label><label class="op"><span class="box"></span>Operar a velocidad reducida por seguridad</label><label class="op"><span class="box"></span>Sugerir una ruta alterna a los usuarios</label><label class="op"><span class="box"></span>Ampliar la ventana del ETA y bajar su confianza</label><label class="op"><span class="box"></span>Informar a los usuarios que la ruta no opera a esta hora</label></div>
+        <div class="preg"><b>Comentario</b><div class="linea"></div><div class="linea"></div></div>
+      </section>
+      <section class="esc">
+        <h2>E11 · Ruta T04A-1</h2>
+        <p class="ctx">Camión · T04A-1 (antes 646) · Lazaro Cardenas<br>Entre semana, 23:00 · Despejado<br>La ruta no tiene salidas programadas a esa hora</p>
+        <div class="preg"><b>1. ¿Cómo estará la demanda frente a lo que programa el horario?</b><label class="op"><span class="box"></span>Baja</label><label class="op"><span class="box"></span>Normal</label><label class="op"><span class="box"></span>Alta</label><label class="op"><span class="box"></span>Crítica</label></div>
+        <div class="preg"><b>2. ¿Qué haría con la flota?</b><label class="op"><span class="box"></span>Agregar unidades</label><label class="op"><span class="box"></span>Mantener</label><label class="op"><span class="box"></span>Retirar unidades</label></div>
+        <div class="preg"><b>3. ¿Cuál sería su acción principal?</b><label class="op"><span class="box"></span>Ninguna</label><label class="op"><span class="box"></span>Agregar unidades a la ruta</label><label class="op"><span class="box"></span>Retirar unidades y reasignarlas a rutas con más demanda</label><label class="op"><span class="box"></span>Reducir el intervalo entre unidades</label><label class="op"><span class="box"></span>Emitir alerta operativa al centro de control</label><label class="op"><span class="box"></span>Operar a velocidad reducida por seguridad</label><label class="op"><span class="box"></span>Sugerir una ruta alterna a los usuarios</label><label class="op"><span class="box"></span>Ampliar la ventana del ETA y bajar su confianza</label><label class="op"><span class="box"></span>Informar a los usuarios que la ruta no opera a esta hora</label></div>
+        <div class="preg"><b>Comentario</b><div class="linea"></div><div class="linea"></div></div>
+      </section>
+      <section class="esc">
+        <h2>E12 · Ruta T04A-1</h2>
+        <p class="ctx">Camión · T04A-1 (antes 646) · Lazaro Cardenas<br>Sábado, 08:00 · Lluvia<br>Pasa cada 3 min según el horario oficial<br>El horario pide 69 unidades</p>
+        <div class="preg"><b>1. ¿Cómo estará la demanda frente a lo que programa el horario?</b><label class="op"><span class="box"></span>Baja</label><label class="op"><span class="box"></span>Normal</label><label class="op"><span class="box"></span>Alta</label><label class="op"><span class="box"></span>Crítica</label></div>
+        <div class="preg"><b>2. ¿Qué haría con la flota?</b><label class="op"><span class="box"></span>Agregar unidades</label><label class="op"><span class="box"></span>Mantener</label><label class="op"><span class="box"></span>Retirar unidades</label></div>
+        <div class="preg"><b>3. ¿Cuál sería su acción principal?</b><label class="op"><span class="box"></span>Ninguna</label><label class="op"><span class="box"></span>Agregar unidades a la ruta</label><label class="op"><span class="box"></span>Retirar unidades y reasignarlas a rutas con más demanda</label><label class="op"><span class="box"></span>Reducir el intervalo entre unidades</label><label class="op"><span class="box"></span>Emitir alerta operativa al centro de control</label><label class="op"><span class="box"></span>Operar a velocidad reducida por seguridad</label><label class="op"><span class="box"></span>Sugerir una ruta alterna a los usuarios</label><label class="op"><span class="box"></span>Ampliar la ventana del ETA y bajar su confianza</label><label class="op"><span class="box"></span>Informar a los usuarios que la ruta no opera a esta hora</label></div>
+        <div class="preg"><b>Comentario</b><div class="linea"></div><div class="linea"></div></div>
+      </section>
+</body></html>

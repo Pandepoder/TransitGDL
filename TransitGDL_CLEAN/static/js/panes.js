@@ -86,6 +86,25 @@ export class RoutesPane {
 // ── Experto ──────────────────────────────────────────────────────────────────
 
 const LEVEL = { critica: "crítica", alta: "alta", normal: "normal", baja: "baja", critico: "crítico", degradado: "degradado" };
+const VALUE_TEXT = {
+  true: "sí", false: "no", clear: "despejado", cloudy: "nublado", rain: "lluvia", thunderstorm: "tormenta", fog: "niebla", snow: "nieve",
+  low: "baja", medium: "media", high: "alta", critical: "crítica", pico_matutino: "pico matutino", pico_mediodia: "pico de mediodía",
+  pico_vespertino: "pico vespertino", valle: "valle", nocturno: "nocturno", agregar: "agregar", reducir: "retirar",
+};
+
+/** Valor de un hecho en palabras ("sí", "tormenta", "12"). */
+function valueText(value) {
+  if (value === null || value === undefined) return "—";
+  const key = String(value);
+  if (key in VALUE_TEXT) return VALUE_TEXT[key];
+  if (typeof value === "number") return Number.isInteger(value) ? String(value) : value.toFixed(2);
+  return key.replace(/_/g, " ");
+}
+
+const pctText = (c) => (c == null ? "" : `${Math.round(c * 100)} %`);
+// Una regla con `si` y `si_alguna` sobre el mismo hecho lo usa dos veces: se muestra una.
+const uniqueFacts = (facts) => facts.filter((f, i) => facts.findIndex((g) => g.hecho === f.hecho && g.valor === f.valor) === i);
+const factText = (f) => `${esc(f.hecho)} = ${esc(valueText(f.valor))}${f.certeza != null && f.certeza < 1 ? ` <span class="muted">(${pctText(f.certeza)})</span>` : ""}`;
 
 /** Flota del diagnóstico: solo compara contra la flota en servicio si hay conteo real. */
 function fleetText(d) {
@@ -105,7 +124,20 @@ export class ExpertPane {
     this.root = root;
     this.app = app;
     this.result = null;
+    this.scenario = null; // clima, hora y día del último diagnóstico
+    this.kb = null; // base de conocimiento (descripciones de hechos y acciones)
     root.addEventListener("click", (event) => this._onClick(event));
+  }
+
+  async _knowledge() {
+    if (!this.kb) {
+      try {
+        this.kb = await api.rules();
+      } catch {
+        this.kb = { hechos_iniciales: {}, acciones: {} };
+      }
+    }
+    return this.kb;
   }
 
   render() {
@@ -140,16 +172,33 @@ export class ExpertPane {
     const box = this.root.querySelector("#ex-result");
     if (t.hasAttribute("data-run")) {
       box.innerHTML = `<div class="card"><div class="skeleton"></div><div class="skeleton" style="width:60%"></div></div>`;
+      this.scenario = {
+        route: this.app.selectedRoute.route_id,
+        clima: this.root.querySelector("#ex-clima").value,
+        hora: this.root.querySelector("#ex-hora").value,
+        dia: this.root.querySelector("#ex-dia").value,
+      };
       try {
-        const d = await api.diagnose(
-          this.app.selectedRoute.route_id,
-          this.root.querySelector("#ex-clima").value,
-          this.root.querySelector("#ex-hora").value,
-          this.root.querySelector("#ex-dia").value,
-        );
-        box.innerHTML = this._diagnosis(d);
+        const [d, kb] = await Promise.all([
+          api.diagnose(this.scenario.route, this.scenario.clima, this.scenario.hora, this.scenario.dia),
+          this._knowledge(),
+        ]);
+        this.result = d;
+        box.innerHTML = this._diagnosis(d, kb);
       } catch (error) {
         box.innerHTML = `<p class="alert">${esc(error.message)}</p>`;
+      }
+    } else if (t.hasAttribute("data-whynot")) {
+      const out = this.root.querySelector("#ex-whynot-out");
+      const action = this.root.querySelector("#ex-whynot").value;
+      if (!this.scenario || !action) return;
+      out.innerHTML = `<div class="skeleton"></div>`;
+      try {
+        const s = this.scenario;
+        const d = await api.diagnose(s.route, s.clima, s.hora, s.dia, action);
+        out.innerHTML = `<ul class="why-not-list">${d.por_que_no.map((line) => `<li>${esc(line)}</li>`).join("")}</ul>`;
+      } catch (error) {
+        out.innerHTML = `<p class="alert">${esc(error.message)}</p>`;
       }
     } else if (t.hasAttribute("data-rules")) {
       try {
@@ -161,8 +210,8 @@ export class ExpertPane {
     }
   }
 
-  _diagnosis(d) {
-    const pct = (c) => (c == null ? "" : ` · ${Math.round(c * 100)} %`);
+  _diagnosis(d, kb) {
+    const pct = (c) => (c == null ? "" : ` · ${pctText(c)}`);
     const scenario = Object.keys(d.escenario || {}).length ? `<span class="badge">Escenario simulado</span>` : "";
     const fleet = [fleetText(d), d.nota_flota]
       .filter(Boolean)
@@ -178,14 +227,65 @@ export class ExpertPane {
         ${fleet}
         ${d.acciones.length ? d.acciones.map((a) => `
           <div class="action">
-            <b>${esc(a.descripcion)}</b><span class="small muted">Certeza ${Math.round(a.certeza * 100)} %</span>
+            <b>${esc(a.descripcion)}</b><span class="small muted">Certeza ${pctText(a.certeza)}</span>
             ${a.motivo ? `<span class="small" style="color:var(--text-2)">${esc(a.motivo)}</span>` : ""}
             <details><summary>¿Por qué?</summary><ol>${a.porque.map((p) => `<li>${esc(p)}</li>`).join("")}</ol></details>
           </div>`).join("") : `<p style="margin:0">Sin acciones: la ruta opera con normalidad.</p>`}
-        <details class="small"><summary class="muted">Reglas aplicadas (${d.reglas_disparadas.length})</summary>
-          <ol>${d.reglas_disparadas.map((r) => `<li><b>${esc(r.regla)}</b> ${esc(r.nombre)}</li>`).join("")}</ol>
-        </details>
+        ${this._whyNot(d, kb)}
+        ${this._facts(d, kb)}
+        ${this._trace(d)}
       </section>`;
+  }
+
+  /** "¿Por qué no?": las acciones de la base que este diagnóstico no recomendó. */
+  _whyNot(d, kb) {
+    const recommended = new Set(d.acciones.map((a) => a.id));
+    const others = Object.entries(kb.acciones || {}).filter(([id]) => !recommended.has(id));
+    if (!others.length) return "";
+    return `
+      <div class="why-not">
+        <label class="field">¿Por qué no se recomendó…?
+          <select id="ex-whynot">${others.map(([id, text]) => `<option value="${esc(id)}">${esc(text)}</option>`).join("")}</select>
+        </label>
+        <button type="button" class="btn btn--sm" data-whynot>Explicar</button>
+        <div id="ex-whynot-out" class="small"></div>
+      </div>`;
+  }
+
+  /** Base de hechos: los datos que entraron al motor y lo que concluyó. */
+  _facts(d, kb) {
+    const descriptions = kb.hechos_iniciales || {};
+    const inputs = Object.entries(d.hechos_iniciales || {});
+    const derived = d.hechos_derivados || [];
+    return `
+      <details class="trace small">
+        <summary>Base de hechos · ${inputs.length} datos de entrada, ${derived.length} concluidos</summary>
+        <h3 class="trace-title">Datos de entrada</h3>
+        <dl class="facts-list">${inputs.map(([name, value]) => `
+          <div><dt>${esc((descriptions[name] || name).split(":")[0])}</dt><dd>${esc(valueText(value))}</dd></div>`).join("")}
+        </dl>
+        <h3 class="trace-title">Hechos concluidos</h3>
+        <ul class="derived-list">${derived.map((f) => `
+          <li>${factText(f)} <span class="muted">· ${esc((f.origenes || []).join(", "))}</span></li>`).join("")}
+        </ul>
+      </details>`;
+  }
+
+  /** Traza de inferencia: una regla disparada por ciclo, con sus premisas y conclusiones. */
+  _trace(d) {
+    const chain = new Set(d.acciones[0]?.reglas || []);
+    const firings = d.reglas_disparadas || [];
+    return `
+      <details class="trace small">
+        <summary>Traza de inferencia · ${firings.length} reglas en ${d.ciclos ?? firings.length} ciclos${chain.size ? " · resaltada la cadena de la primera acción" : ""}</summary>
+        <ol class="trace-list">${firings.map((r) => `
+          <li class="${chain.has(r.regla) ? "is-chain" : ""}">
+            <span class="trace-head">Ciclo ${esc(r.ciclo)} · <b>${esc(r.regla)}</b> ${esc(r.nombre)} <span class="muted">· prioridad ${esc(r.prioridad)}</span></span>
+            <span class="trace-if">SI ${r.premisas.length ? uniqueFacts(r.premisas).map(factText).join(" Y ") : "—"}</span>
+            <span class="trace-then">→ ${r.conclusiones.map(factText).join(" · ")}</span>
+          </li>`).join("")}
+        </ol>
+      </details>`;
   }
 }
 

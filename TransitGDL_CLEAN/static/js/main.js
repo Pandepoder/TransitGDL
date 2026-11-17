@@ -50,6 +50,8 @@ const app = {
     this.tm.showRoute(detail, this.patternId, { fit });
     this._legend();
     if (render) {
+      // Elegida desde el mapa o la pestaña Rutas: el buscador muestra la ruta.
+      search.setText(detail.label || detail.short_name);
       this.stopQuery = null;
       this.focus = null;
       this.tm.setFocus(null);

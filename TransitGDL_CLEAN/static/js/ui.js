@@ -129,12 +129,14 @@ export function initSearch({ search, onPick }) {
     items = [];
     const groups = [];
     if (result.intent) {
-      items.push({ kind: "intent", ...result.intent });
+      items.push({ ...result.intent, kind: "intent" });
       groups.push(["", [items.length - 1]]);
     }
+    // El tipo de opción va al final: los lugares traen su propio `kind`
+    // (universidad, centro…) y lo pisarían, y la lista no se mostraba.
     const add = (title, kind, entries) => {
       if (!entries.length) return;
-      const idx = entries.map((entry) => items.push({ kind, ...entry }) - 1);
+      const idx = entries.map((entry) => items.push({ ...entry, kind }) - 1);
       groups.push([title, idx]);
     };
     add("Rutas", "route", result.routes);

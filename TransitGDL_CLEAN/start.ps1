@@ -19,9 +19,10 @@ if (-not (Test-Path ".env")) {
     Write-Host "Creado .env desde .env.example"
 }
 
-if (-not (Test-Path "data/gtfs_guadalajara.zip")) {
-    Write-Host "Generando GTFS demo..."
-    python scripts/seed_demo.py --force
+if (-not (Test-Path "data/gtfs_amg.zip")) {
+    Write-Host "Descargando el GTFS oficial del AMG..."
+    python scripts/download_gtfs.py
+    # Si la descarga falla, la app genera sola un GTFS de demostracion.
 }
 
 $env:PYTHONPATH = "."

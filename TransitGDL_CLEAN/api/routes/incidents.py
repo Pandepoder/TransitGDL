@@ -13,8 +13,12 @@ router = APIRouter(prefix="/incidents", tags=["incidents"])
 
 # Tipos anotados Pydantic v2 — equivalente a constr() pero sin la deprecación
 # que causaba HTTP 500 en lugar de 422 al fallar la validación de lista.
-_RouteStr = Annotated[str, Field(min_length=1, max_length=32, pattern=r"^[A-Za-z0-9 _-]+$")]
-_StopStr  = Annotated[str, Field(min_length=1, max_length=32, pattern=r"^[A-Za-z0-9 _-]+$")]
+_RouteStr = Annotated[
+    str, Field(min_length=1, max_length=32, pattern=r"^[A-Za-z0-9 _-]+$")
+]
+_StopStr = Annotated[
+    str, Field(min_length=1, max_length=32, pattern=r"^[A-Za-z0-9 _-]+$")
+]
 
 
 class IncidentCreate(BaseModel):

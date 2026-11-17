@@ -2,18 +2,58 @@ from __future__ import annotations
 
 import logging
 import time
+from dataclasses import dataclass
 
 import httpx
 
 from .config import CONFIG
 from .models import WeatherCondition
+from .params import CLIMA
 
 logger = logging.getLogger(__name__)
+
+# Intensidad nominal (mm/h) cuando el clima se simula y no hay medición.
+_NOMINAL_INTENSITY = {
+    WeatherCondition.RAIN: 5.0,
+    WeatherCondition.THUNDERSTORM: 12.0,
+}
+
+
+@dataclass(frozen=True, slots=True)
+class WeatherState:
+    """Clima actual: condición y, si llueve, intensidad en mm por hora."""
+
+    condition: WeatherCondition = WeatherCondition.CLEAR
+    precipitation_mm_h: float = 0.0
+
+    @property
+    def key(self) -> str:
+        """Clave de `params.yaml` que corresponde a este clima."""
+        if self.condition != WeatherCondition.RAIN:
+            return self.condition.value
+        if self.precipitation_mm_h >= CLIMA["umbral_lluvia_fuerte_mm_h"]:
+            return "rain_fuerte"
+        if self.precipitation_mm_h >= CLIMA["umbral_lluvia_moderada_mm_h"]:
+            return "rain_moderada"
+        return "rain_ligera"
+
+    @property
+    def label(self) -> str:
+        return {
+            "clear": "despejado",
+            "cloudy": "nublado",
+            "fog": "niebla",
+            "rain_ligera": "lluvia ligera",
+            "rain_moderada": "lluvia moderada",
+            "rain_fuerte": "lluvia fuerte",
+            "thunderstorm": "tormenta",
+            "snow": "nieve",
+        }.get(self.key, "sin datos")
 
 
 class WeatherClient:
     """
-    Cliente simple para Open-Meteo. Si la red falla, cae a CLEAR.
+    Cliente simple para Open-Meteo. Si la red falla, cae a despejado.
     El resultado se cachea 5 minutos para evitar una petición HTTP por
     cada consulta de ETA y no agotar el rate-limit gratuito de Open-Meteo.
     """
@@ -37,27 +77,50 @@ class WeatherClient:
         )
         # Caché en memoria: no se comparte entre workers, pero es suficiente
         # para el volumen de una instancia única (el caso de producción previsto).
-        self._cache_value: WeatherCondition | None = None
+        self._cache_value: WeatherState | None = None
         self._cache_ts: float = 0.0
-        self._demo_override: WeatherCondition | None = None
+        self._demo_override: WeatherState | None = None
 
-    def set_demo_override(self, condition: WeatherCondition | str | None) -> None:
+    # ── Clima simulado para demostraciones ───────────────────────────────────
+
+    def set_demo_override(
+        self,
+        condition: WeatherCondition | str | None,
+        precipitation_mm_h: float | None = None,
+    ) -> None:
         """Presenter override (development demos). Pass None to clear."""
         if condition is None:
             self._demo_override = None
             return
-        self._demo_override = self._coerce_condition(condition)
+        parsed = self._coerce_condition(condition)
+        intensity = (
+            precipitation_mm_h
+            if precipitation_mm_h is not None
+            else _NOMINAL_INTENSITY.get(parsed, 0.0)
+        )
+        self._demo_override = WeatherState(parsed, float(intensity))
 
     def clear_demo_override(self) -> None:
         self._demo_override = None
 
-    async def get_current_condition(self) -> WeatherCondition:
+    def state_for(self, condition: WeatherCondition | str) -> WeatherState:
+        """Clima de un escenario ("¿y si llueve?"), con la intensidad típica."""
+        parsed = self._coerce_condition(condition)
+        return WeatherState(parsed, float(_NOMINAL_INTENSITY.get(parsed, 0.0)))
+
+    @property
+    def is_simulated(self) -> bool:
+        return self._demo_override is not None
+
+    # ── Lectura ──────────────────────────────────────────────────────────────
+
+    async def get_current_state(self) -> WeatherState:
+        """Condición e intensidad de lluvia actuales (con caché de 5 minutos)."""
         if self._demo_override is not None:
             return self._demo_override
         if CONFIG.use_mock_weather:
-            return WeatherCondition.CLEAR
+            return WeatherState()
 
-        # Devolver valor cacheado si todavía es reciente
         now = time.monotonic()
         if (
             self._cache_value is not None
@@ -69,7 +132,7 @@ class WeatherClient:
         params = {
             "latitude": self.latitude,
             "longitude": self.longitude,
-            "current_weather": "true",
+            "current": "weather_code,precipitation",
             "timezone": "America/Mexico_City",
         }
 
@@ -77,23 +140,48 @@ class WeatherClient:
             async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
                 response = await client.get(url, params=params)
                 response.raise_for_status()
-                data = response.json()
-                code = int(data.get("current_weather", {}).get("weathercode", -1))
-                result = self._map_weather_code(code)
+                current = response.json().get("current", {})
+                condition = self._map_weather_code(int(current.get("weather_code", -1)))
+                # La precipitación viene acumulada en el intervalo (segundos).
+                interval = float(current.get("interval") or 3600.0)
+                amount = float(current.get("precipitation") or 0.0)
+                state = WeatherState(condition, amount * 3600.0 / max(interval, 60.0))
         except Exception as exc:  # pragma: no cover - live network failure path
-            logger.warning("WeatherClient: fallback a CLEAR por error: %s", exc)
-            # En caso de error conservamos el último valor conocido si existe,
-            # o caemos a CLEAR. No actualizamos el timestamp para reintentar
-            # en la próxima llamada en lugar de esperar 5 minutos.
+            logger.warning("WeatherClient: sin datos de clima (%s).", exc)
+            # Se conserva el último valor conocido y no se actualiza la marca
+            # de tiempo, para reintentar en la siguiente llamada.
             return (
-                self._cache_value
-                if self._cache_value is not None
-                else WeatherCondition.CLEAR
+                self._cache_value if self._cache_value is not None else WeatherState()
             )
 
-        self._cache_value = result
+        self._cache_value = state
         self._cache_ts = now
-        return result
+        return state
+
+    def cached_state(self) -> WeatherState:
+        """Último clima conocido sin consultar la red (para el simulador)."""
+        if self._demo_override is not None:
+            return self._demo_override
+        return self._cache_value or WeatherState()
+
+    async def get_current_condition(self) -> WeatherCondition:
+        return (await self.get_current_state()).condition
+
+    # ── Efecto del clima ─────────────────────────────────────────────────────
+
+    def travel_factor(
+        self, state: WeatherState | WeatherCondition | str | None, mode: str = "bus"
+    ) -> float:
+        """
+        Factor multiplicativo sobre el tiempo de recorrido. Los modos con vía
+        propia (tren, Macrobús) reciben solo una parte del efecto.
+        """
+        if not isinstance(state, WeatherState):
+            condition = self._coerce_condition(state)
+            state = WeatherState(condition, _NOMINAL_INTENSITY.get(condition, 0.0))
+        base = float(CLIMA["factor_recorrido"].get(state.key, 1.0))
+        sensitivity = float(CLIMA["sensibilidad"].get(mode, 1.0))
+        return 1.0 + (base - 1.0) * sensitivity
 
     def get_delay_minutes(
         self, condition: WeatherCondition | str | None = None
@@ -182,8 +270,8 @@ class WeatherClient:
             return WeatherCondition.FOG
         if code in {51, 53, 55, 61, 63, 65, 80, 81, 82}:
             return WeatherCondition.RAIN
-        if code in {56, 57, 66, 67, 71, 73, 75, 77}:
+        if code in {56, 57, 66, 67, 71, 73, 75, 77, 85, 86}:
             return WeatherCondition.SNOW
-        if code in {95, 96, 99}:
+        if code in {95, 96, 97, 99}:
             return WeatherCondition.THUNDERSTORM
         return WeatherCondition.UNKNOWN

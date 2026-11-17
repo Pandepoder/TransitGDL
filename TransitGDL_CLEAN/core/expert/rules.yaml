@@ -1,0 +1,775 @@
+# ─────────────────────────────────────────────────────────────────────────────
+#  Base de conocimiento del sistema experto de TransitGDL
+#  Dominio: diagnóstico operativo de una ruta de transporte público.
+#
+#  Cada regla:
+#    id          identificador único
+#    nombre      título corto
+#    prioridad   mayor = se dispara antes (resolución de conflictos)
+#    certeza     factor de certeza de la regla, en (0, 1]
+#    si          condiciones que deben cumplirse TODAS
+#    si_alguna   condiciones de las que basta UNA (opcional)
+#    entonces    hechos que se concluyen
+#    explicacion por qué un experto aplica esta regla
+#
+#  Condición: {hecho, op, valor, certeza_min?}
+#    op: ==  !=  >  >=  <  <=  en  no_en  conocido  desconocido
+#    `conocido` y `desconocido` no llevan valor: preguntan si el dato llegó.
+#    certeza_min: exige que el hecho tenga al menos esa certeza acumulada.
+#
+#  Estratos por prioridad (así la evidencia se acumula antes de decidir):
+#    100  clasificación del contexto
+#     80  evidencia sobre demanda y servicio
+#     40  niveles (diagnóstico)
+#     30  decisión de flota
+#     20  acciones recomendadas
+#     10  acciones que dependen de otros diagnósticos
+#
+#  Notas:
+#  · Las negaciones (!=, no_en, desconocido) solo se usan sobre datos iniciales;
+#    el cargador lo valida.
+#  · Los atributos de `univaluados` deben concluirse en un estrato superior al de
+#    las reglas que los consultan (el cargador también lo valida).
+#  · `nivel_demanda` mide la demanda frente al servicio que el horario ya
+#    programa: en la hora pico de una ruta que ya sube su frecuencia, la demanda
+#    está cubierta y el nivel es normal. Lo mismo al revés: si el horario ya
+#    baja el servicio en fin de semana, festivo o de noche, esa baja demanda
+#    está atendida y no se recorta otra vez.
+# ─────────────────────────────────────────────────────────────────────────────
+
+version: "1.1"
+
+hechos_iniciales:
+  clima: "Condición climática: clear, cloudy, rain, thunderstorm, fog, snow, unknown"
+  hora: "Hora local del día (0–23)"
+  es_fin_de_semana: "Sábado o domingo"
+  es_festivo: "Día festivo oficial en Jalisco"
+  tipo_ruta: "Tipo GTFS de la ruta (0 tranvía, 1 metro, 2 tren, 3 autobús)"
+  vehiculos_en_ruta: "Unidades que reportan posición GPS en la ruta (con rastreo parcial, una muestra)"
+  gps_esperado: "La ruta debería reportar posiciones: hay una fuente GPS real o el simulador la cubre"
+  unidades_en_servicio: "Flota en servicio informada por el operador o por un GPS que cubre todas las unidades"
+  frecuencia_min: "Minutos entre unidades según el horario vigente"
+  incidentes_activos: "Número de incidencias activas en la ruta"
+  severidad_max_incidente: "Severidad más alta entre las incidencias: low, medium, high, critical"
+  hay_ruta_alterna: "Existe otra ruta que comparte paradas con esta"
+  muestras_feedback: "Calificaciones de usuarios acumuladas en la franja actual"
+  error_medio_min: "Error medio del ETA en la franja (positivo = llega tarde)"
+  desviacion_error_min: "Desviación estándar del error del ETA en la franja"
+  es_hora_pico_ruta: >-
+    La frecuencia actual de la ruta está cerca de la mejor del día. No llega
+    cuando la ruta opera con la misma frecuencia todo el día.
+  unidades_necesarias: "Unidades para sostener la frecuencia: tiempo de ciclo ÷ frecuencia"
+  cobertura_flota: "Unidades en servicio ÷ unidades necesarias (1.0 = completa); solo con un conteo real"
+  horario_reducido: >-
+    El horario ya trae bastante menos servicio que el mejor de un día laboral
+    (fines de semana, festivos y noches con menos salidas)
+  sin_servicio_programado: "La ruta no tiene servicio programado a esta hora"
+
+# Atributos con un solo valor válido: para las reglas cuenta el de mayor certeza.
+univaluados:
+  - nivel_demanda
+  - estado_servicio
+  - decision_flota
+
+acciones:
+  emitir_alerta_operativa: "Emitir alerta operativa al centro de control"
+  agregar_unidades: "Agregar unidades a la ruta"
+  reforzar_frecuencia: "Reducir el intervalo entre unidades"
+  reducir_unidades: "Retirar unidades y reasignarlas a rutas con más demanda"
+  sugerir_ruta_alterna: "Sugerir una ruta alterna a los usuarios"
+  notificar_usuarios: "Notificar la incidencia a los usuarios"
+  ampliar_ventana_eta: "Ampliar la ventana del ETA y bajar su confianza"
+  reducir_velocidad_operativa: "Operar a velocidad reducida por seguridad"
+  ajustar_horario_publicado: "Ajustar el horario publicado al retraso observado"
+  revisar_regularidad: "Auditar la regularidad de la ruta"
+  verificar_gps: "Verificar el reporte GPS de las unidades"
+  activar_plan_contingencia: "Activar el plan de contingencia de la ruta"
+  informar_sin_servicio: "Informar a los usuarios que la ruta no opera a esta hora"
+
+reglas:
+  # ── Estrato 100 · Clasificación del contexto ───────────────────────────────
+  - id: R01
+    nombre: Pico matutino
+    prioridad: 100
+    si:
+      - {hecho: hora, op: en, valor: [7, 8, 9]}
+    entonces:
+      - {hecho: hora_pico_general, valor: true}
+      - {hecho: periodo, valor: pico_matutino}
+    explicacion: Entre 7 y 9 h coinciden las entradas a escuelas y trabajos.
+
+  - id: R02
+    nombre: Pico de mediodía
+    prioridad: 100
+    si:
+      - {hecho: hora, op: en, valor: [13, 14, 15]}
+    entonces:
+      - {hecho: hora_pico_general, valor: true}
+      - {hecho: periodo, valor: pico_mediodia}
+    explicacion: Entre 13 y 15 h salen los turnos escolares y es la hora de comida.
+
+  - id: R03
+    nombre: Pico vespertino
+    prioridad: 100
+    si:
+      - {hecho: hora, op: en, valor: [18, 19, 20]}
+    entonces:
+      - {hecho: hora_pico_general, valor: true}
+      - {hecho: periodo, valor: pico_vespertino}
+    explicacion: Entre 18 y 20 h se concentra el regreso a casa.
+
+  - id: R04
+    nombre: Horario nocturno
+    prioridad: 100
+    si:
+      - {hecho: hora, op: en, valor: [22, 23, 0, 1, 2, 3, 4]}
+    entonces:
+      - {hecho: horario_nocturno, valor: true}
+      - {hecho: periodo, valor: nocturno}
+    explicacion: De 22 a 4 h la movilidad de la ciudad es mínima.
+
+  - id: R04B
+    nombre: Horario valle
+    prioridad: 100
+    si:
+      - {hecho: hora, op: en, valor: [5, 6, 10, 11, 12, 16, 17, 21]}
+    entonces:
+      - {hecho: periodo, valor: valle}
+    explicacion: Entre los picos la demanda baja y se estabiliza.
+
+  - id: R05
+    nombre: Lluvia
+    prioridad: 100
+    certeza: 0.8
+    si:
+      - {hecho: clima, op: "==", valor: rain}
+    entonces:
+      - {hecho: clima_adverso, valor: true}
+    explicacion: La lluvia entorpece la circulación, aunque su intensidad varía.
+
+  - id: R06
+    nombre: Tormenta o nevada
+    prioridad: 100
+    si:
+      - {hecho: clima, op: en, valor: [thunderstorm, snow]}
+    entonces:
+      - {hecho: clima_adverso, valor: true}
+      - {hecho: clima_severo, valor: true}
+    explicacion: Las tormentas provocan encharcamientos y cortes viales.
+
+  - id: R07
+    nombre: Niebla
+    prioridad: 100
+    si:
+      - {hecho: clima, op: "==", valor: fog}
+    entonces:
+      - {hecho: visibilidad_reducida, valor: true}
+    explicacion: Con niebla los operadores deben bajar la velocidad.
+
+  - id: R08
+    nombre: Modo ferroviario
+    prioridad: 100
+    si:
+      - {hecho: tipo_ruta, op: en, valor: [0, 1, 2]}
+    entonces:
+      - {hecho: modo_ferroviario, valor: true}
+    explicacion: Tranvía, metro y tren circulan en vía exclusiva.
+
+  - id: R09
+    nombre: Modo vial
+    prioridad: 100
+    si:
+      - {hecho: tipo_ruta, op: no_en, valor: [0, 1, 2]}
+    entonces:
+      - {hecho: modo_vial, valor: true}
+    explicacion: Los autobuses comparten la vialidad con el tráfico general.
+
+  - id: R10
+    nombre: Frecuencia baja
+    prioridad: 100
+    si:
+      - {hecho: frecuencia_min, op: ">=", valor: 20}
+    entonces:
+      - {hecho: frecuencia_baja, valor: true}
+    explicacion: Con 20 min o más entre unidades, perder un camión cuesta mucho.
+
+  - id: R11
+    nombre: Frecuencia alta
+    prioridad: 100
+    si:
+      - {hecho: frecuencia_min, op: "<=", valor: 8}
+    entonces:
+      - {hecho: frecuencia_alta, valor: true}
+    explicacion: Con 8 min o menos entre unidades hay holgura de capacidad.
+
+  - id: R12
+    nombre: Incidencia activa
+    prioridad: 100
+    si:
+      - {hecho: incidentes_activos, op: ">=", valor: 1}
+    entonces:
+      - {hecho: hay_incidente, valor: true}
+    explicacion: Hay al menos un reporte sin resolver en la ruta.
+
+  - id: R13
+    nombre: Incidencia grave
+    prioridad: 100
+    si:
+      - {hecho: severidad_max_incidente, op: en, valor: [high, critical]}
+    entonces:
+      - {hecho: incidente_grave, valor: true}
+    explicacion: Las incidencias altas o críticas suelen cerrar carriles o tramos.
+
+  - id: R14
+    nombre: Ruta impredecible
+    prioridad: 100
+    certeza: 0.9
+    si:
+      - {hecho: muestras_feedback, op: ">=", valor: 3}
+      - {hecho: desviacion_error_min, op: ">", valor: 10}
+    entonces:
+      - {hecho: ruta_impredecible, valor: true}
+    explicacion: Si el error del ETA varía más de 10 min, la ruta no es regular.
+
+  - id: R15
+    nombre: Retraso crónico
+    prioridad: 100
+    certeza: 0.8
+    si:
+      - {hecho: muestras_feedback, op: ">=", valor: 3}
+      - {hecho: error_medio_min, op: ">=", valor: 5}
+    entonces:
+      - {hecho: retraso_cronico, valor: true}
+    explicacion: Los usuarios reportan de forma sostenida que llega 5 min tarde o más.
+
+  - id: R16
+    nombre: Sin cobertura GPS
+    prioridad: 100
+    si:
+      - {hecho: vehiculos_en_ruta, op: "==", valor: 0}
+      - {hecho: gps_esperado, valor: true}
+    entonces:
+      - {hecho: sin_cobertura_gps, valor: true}
+    explicacion: >-
+      La ruta debería reportar posiciones y ninguna unidad lo hace; el ETA
+      depende solo del horario.
+
+  - id: R17
+    nombre: Hora pico de la ruta
+    prioridad: 100
+    certeza: 0.9
+    si:
+      - {hecho: es_hora_pico_ruta, valor: true}
+    entonces:
+      - {hecho: hora_pico, valor: true}
+    explicacion: >-
+      La ruta opera con su frecuencia más alta del día; el horario refleja
+      cuándo el organismo espera más pasajeros en esta ruta en particular.
+
+  - id: R17B
+    nombre: Hora pico general en ruta de frecuencia fija
+    prioridad: 100
+    certeza: 0.9
+    si:
+      - {hecho: hora_pico_general, valor: true}
+      - {hecho: es_hora_pico_ruta, op: desconocido}
+    entonces:
+      - {hecho: hora_pico, valor: true}
+      - {hecho: pico_no_cubierto, valor: true}
+    explicacion: >-
+      La ruta mantiene la misma frecuencia todo el día, así que su horario no
+      sube el servicio en la hora pico de la ciudad. Si la frecuencia de la ruta
+      se conoce, manda la de la ruta y esta regla no aplica.
+
+  - id: R18
+    nombre: Flota insuficiente
+    prioridad: 100
+    si:
+      - {hecho: cobertura_flota, op: "<", valor: 0.75}
+    entonces:
+      - {hecho: flota_insuficiente, valor: true}
+    explicacion: Hay menos de tres cuartas partes de las unidades que exige la frecuencia.
+
+  - id: R19
+    nombre: Flota excedente
+    prioridad: 100
+    si:
+      - {hecho: cobertura_flota, op: ">=", valor: 1.3}
+    entonces:
+      - {hecho: flota_excedente, valor: true}
+    explicacion: Hay al menos 30 % más unidades de las que exige la frecuencia.
+
+  # ── Estrato 80 · Evidencia sobre la demanda ────────────────────────────────
+  - id: R20
+    nombre: Hora pico que el horario no cubre
+    prioridad: 80
+    certeza: 0.65
+    si:
+      - {hecho: pico_no_cubierto, valor: true}
+      - {hecho: es_fin_de_semana, valor: false}
+      - {hecho: es_festivo, valor: false}
+    entonces:
+      - {hecho: demanda_elevada, valor: true}
+    explicacion: >-
+      En día laboral la hora pico concentra la mayor parte de los viajes, y el
+      horario de esta ruta no programa más servicio para atenderla.
+
+  - id: R21
+    nombre: Mal clima en ruta vial
+    prioridad: 80
+    certeza: 0.6
+    si:
+      - {hecho: clima_adverso, valor: true}
+      - {hecho: modo_vial, valor: true}
+    entonces:
+      - {hecho: demanda_elevada, valor: true}
+    explicacion: Con lluvia, peatones y ciclistas se pasan al camión.
+
+  - id: R22
+    nombre: Clima severo
+    prioridad: 80
+    certeza: 0.4
+    si:
+      - {hecho: clima_severo, valor: true}
+    entonces:
+      - {hecho: demanda_elevada, valor: true}
+    explicacion: En tormenta la gente evita caminar y se aglomera en las paradas.
+
+  - id: R23
+    nombre: Pocas unidades en hora pico
+    prioridad: 80
+    certeza: 0.4
+    si:
+      - {hecho: hora_pico, valor: true}
+      - {hecho: frecuencia_baja, valor: true}
+    entonces:
+      - {hecho: demanda_elevada, valor: true}
+    explicacion: Con baja frecuencia en hora pico cada unidad llega saturada.
+
+  - id: R24
+    nombre: Mal clima en modo ferroviario
+    prioridad: 80
+    certeza: 0.3
+    si:
+      - {hecho: clima_adverso, valor: true}
+      - {hecho: modo_ferroviario, valor: true}
+    entonces:
+      - {hecho: demanda_elevada, valor: true}
+    explicacion: Con lluvia parte de los usuarios del camión se pasa al tren.
+
+  - id: R25
+    nombre: Día festivo con horario completo
+    prioridad: 80
+    certeza: 0.6
+    si:
+      - {hecho: es_festivo, valor: true}
+      - {hecho: horario_reducido, valor: false}
+    entonces:
+      - {hecho: demanda_reducida, valor: true}
+    explicacion: >-
+      En festivo no hay viajes escolares ni la mayoría de los laborales, y el
+      horario de la ruta no baja su servicio.
+
+  - id: R26
+    nombre: Fin de semana con horario completo
+    prioridad: 80
+    certeza: 0.5
+    si:
+      - {hecho: es_fin_de_semana, valor: true}
+      - {hecho: horario_reducido, valor: false}
+    entonces:
+      - {hecho: demanda_reducida, valor: true}
+    explicacion: >-
+      Sábado y domingo baja la movilidad obligada, y el horario de la ruta no
+      baja su servicio.
+
+  - id: R27
+    nombre: Madrugada con horario completo
+    prioridad: 80
+    certeza: 0.7
+    si:
+      - {hecho: horario_nocturno, valor: true}
+      - {hecho: horario_reducido, valor: false}
+    entonces:
+      - {hecho: demanda_reducida, valor: true}
+    explicacion: De noche viajan muy pocos usuarios y la ruta mantiene su frecuencia de día.
+
+  - id: R28
+    nombre: Baja demanda ya prevista en el horario
+    prioridad: 80
+    si:
+      - {hecho: horario_reducido, valor: true}
+    si_alguna:
+      - {hecho: es_festivo, valor: true}
+      - {hecho: es_fin_de_semana, valor: true}
+      - {hecho: horario_nocturno, valor: true}
+    entonces:
+      - {hecho: baja_demanda_prevista, valor: true}
+    explicacion: >-
+      El horario ya reduce el servicio para este día u hora: la baja demanda
+      está atendida y no hace falta retirar más unidades.
+
+  # ── Estrato 80 · Evidencia sobre el servicio ───────────────────────────────
+  - id: R30
+    nombre: Mal clima degrada rutas viales
+    prioridad: 80
+    certeza: 0.6
+    si:
+      - {hecho: clima_adverso, valor: true}
+      - {hecho: modo_vial, valor: true}
+    entonces:
+      - {hecho: servicio_degradado, valor: true}
+    explicacion: La lluvia baja la velocidad comercial de los autobuses.
+
+  - id: R31
+    nombre: Clima severo degrada rutas viales
+    prioridad: 80
+    certeza: 0.4
+    si:
+      - {hecho: clima_severo, valor: true}
+      - {hecho: modo_vial, valor: true}
+    entonces:
+      - {hecho: servicio_degradado, valor: true}
+    explicacion: Las tormentas inundan pasos a desnivel y obligan a desvíos.
+
+  - id: R32
+    nombre: Incidencia degrada el servicio
+    prioridad: 80
+    certeza: 0.5
+    si:
+      - {hecho: hay_incidente, valor: true}
+    entonces:
+      - {hecho: servicio_degradado, valor: true}
+    explicacion: Cualquier incidencia activa retrasa el paso por el tramo afectado.
+
+  - id: R33
+    nombre: Incidencia grave degrada el servicio
+    prioridad: 80
+    certeza: 0.7
+    si:
+      - {hecho: incidente_grave, valor: true}
+    entonces:
+      - {hecho: servicio_degradado, valor: true}
+    explicacion: Una incidencia grave puede interrumpir el recorrido.
+
+  - id: R34
+    nombre: Retraso crónico degrada el servicio
+    prioridad: 80
+    certeza: 0.5
+    si:
+      - {hecho: retraso_cronico, valor: true}
+    entonces:
+      - {hecho: servicio_degradado, valor: true}
+    explicacion: Un retraso sostenido indica que el horario ya no se cumple.
+
+  - id: R35
+    nombre: Niebla degrada rutas viales
+    prioridad: 80
+    certeza: 0.3
+    si:
+      - {hecho: visibilidad_reducida, valor: true}
+      - {hecho: modo_vial, valor: true}
+    entonces:
+      - {hecho: servicio_degradado, valor: true}
+    explicacion: Con niebla se circula más lento por seguridad.
+
+  - id: R36
+    nombre: Irregularidad degrada el servicio
+    prioridad: 80
+    certeza: 0.3
+    si:
+      - {hecho: ruta_impredecible, valor: true}
+    entonces:
+      - {hecho: servicio_degradado, valor: true}
+    explicacion: Una ruta irregular ofrece un servicio poco confiable.
+
+  - id: R37
+    nombre: Falta de unidades degrada el servicio
+    prioridad: 80
+    certeza: 0.5
+    si:
+      - {hecho: flota_insuficiente, valor: true}
+    entonces:
+      - {hecho: servicio_degradado, valor: true}
+    explicacion: Con menos unidades, los intervalos reales se alargan y las paradas se llenan.
+
+  # ── Estrato 40 · Niveles ───────────────────────────────────────────────────
+  - id: R40
+    nombre: Demanda crítica
+    prioridad: 40
+    si:
+      - {hecho: demanda_elevada, valor: true, certeza_min: 0.85}
+    entonces:
+      - {hecho: nivel_demanda, valor: critica}
+    explicacion: Varias causas independientes de alta demanda coinciden.
+
+  - id: R41
+    nombre: Demanda alta
+    prioridad: 40
+    certeza: 0.9
+    si:
+      - {hecho: demanda_elevada, valor: true, certeza_min: 0.45}
+    entonces:
+      - {hecho: nivel_demanda, valor: alta}
+    explicacion: Hay evidencia suficiente de demanda por encima de lo normal.
+
+  - id: R42
+    nombre: Demanda baja
+    prioridad: 40
+    certeza: 0.8
+    si:
+      - {hecho: demanda_reducida, valor: true, certeza_min: 0.5}
+    entonces:
+      - {hecho: nivel_demanda, valor: baja}
+    explicacion: El calendario o la hora indican pocos usuarios.
+
+  - id: R45
+    nombre: Servicio crítico
+    prioridad: 40
+    si:
+      - {hecho: servicio_degradado, valor: true, certeza_min: 0.8}
+    entonces:
+      - {hecho: estado_servicio, valor: critico}
+    explicacion: Se acumulan causas fuertes de afectación al servicio.
+
+  - id: R46
+    nombre: Servicio degradado
+    prioridad: 40
+    certeza: 0.9
+    si:
+      - {hecho: servicio_degradado, valor: true, certeza_min: 0.45}
+    entonces:
+      - {hecho: estado_servicio, valor: degradado}
+    explicacion: Hay evidencia suficiente de que el servicio va más lento de lo normal.
+
+  # ── Estrato 30 · Decisión de flota (una sola: agregar o reducir) ───────────
+  - id: R47
+    nombre: Más unidades por demanda
+    prioridad: 30
+    si:
+      - {hecho: nivel_demanda, op: en, valor: [alta, critica]}
+      - {hecho: sin_servicio_programado, op: desconocido}
+    entonces:
+      - {hecho: decision_flota, valor: agregar}
+    explicacion: La demanda supera lo que el horario programa; hacen falta más unidades.
+
+  - id: R48
+    nombre: Completar la flota
+    prioridad: 30
+    certeza: 0.9
+    si:
+      - {hecho: flota_insuficiente, valor: true}
+      - {hecho: sin_servicio_programado, op: desconocido}
+    entonces:
+      - {hecho: decision_flota, valor: agregar}
+    explicacion: Sin las unidades que exige el horario, la frecuencia publicada no se cumple.
+
+  - id: R49
+    nombre: Menos unidades por baja demanda
+    prioridad: 30
+    certeza: 0.8
+    si:
+      - {hecho: nivel_demanda, valor: baja}
+      - {hecho: frecuencia_alta, valor: true}
+      - {hecho: sin_servicio_programado, op: desconocido}
+    entonces:
+      - {hecho: decision_flota, valor: reducir}
+    explicacion: Con poca demanda y mucha frecuencia sobran unidades en la ruta.
+
+  - id: R43
+    nombre: Unidades sobrantes fuera de la hora pico de la ruta
+    prioridad: 30
+    certeza: 0.7
+    si:
+      - {hecho: flota_excedente, valor: true}
+      - {hecho: es_hora_pico_ruta, valor: false}
+      - {hecho: clima, op: en, valor: [clear, cloudy]}
+    entonces:
+      - {hecho: decision_flota, valor: reducir}
+    explicacion: Fuera de la hora pico de la ruta y con buen clima, las unidades de más pueden reasignarse.
+
+  - id: R44
+    nombre: Unidades sobrantes en horario valle
+    prioridad: 30
+    certeza: 0.7
+    si:
+      - {hecho: flota_excedente, valor: true}
+      - {hecho: es_hora_pico_ruta, op: desconocido}
+      - {hecho: periodo, op: en, valor: [valle, nocturno]}
+      - {hecho: clima, op: en, valor: [clear, cloudy]}
+    entonces:
+      - {hecho: decision_flota, valor: reducir}
+    explicacion: >-
+      En una ruta de frecuencia fija, fuera de las horas pico de la ciudad y
+      con buen clima, las unidades de más pueden reasignarse.
+
+  # ── Estrato 20 · Acciones ──────────────────────────────────────────────────
+  - id: R50
+    nombre: Alerta por demanda crítica
+    prioridad: 20
+    si:
+      - {hecho: nivel_demanda, valor: critica}
+    entonces:
+      - {hecho: accion, valor: emitir_alerta_operativa}
+    explicacion: Con demanda crítica el centro de control debe intervenir.
+
+  - id: R51
+    nombre: Refuerzo de 50 %
+    prioridad: 20
+    si:
+      - {hecho: decision_flota, valor: agregar}
+      - {hecho: nivel_demanda, valor: critica}
+    entonces:
+      - {hecho: factor_flota, valor: 1.5}
+    explicacion: Con demanda crítica conviene sumar 50 % a la flota que exige el horario.
+
+  - id: R52
+    nombre: Refuerzo de 25 %
+    prioridad: 20
+    si:
+      - {hecho: decision_flota, valor: agregar}
+      - {hecho: nivel_demanda, valor: alta}
+    entonces:
+      - {hecho: factor_flota, valor: 1.25}
+    explicacion: Con demanda alta conviene sumar alrededor de 25 % a la flota que exige el horario.
+
+  - id: R63
+    nombre: Recorte de 15 %
+    prioridad: 20
+    si:
+      - {hecho: decision_flota, valor: reducir}
+      - {hecho: nivel_demanda, valor: baja}
+      - {hecho: frecuencia_alta, valor: true}
+    entonces:
+      - {hecho: factor_flota, valor: 0.85}
+    explicacion: Con poca demanda la ruta sostiene su servicio con 15 % menos unidades.
+
+  - id: R61
+    nombre: Agregar unidades
+    prioridad: 20
+    si:
+      - {hecho: decision_flota, valor: agregar}
+    entonces:
+      - {hecho: accion, valor: agregar_unidades}
+    explicacion: La decisión de flota es reforzar la ruta.
+
+  - id: R62
+    nombre: Retirar unidades
+    prioridad: 20
+    si:
+      - {hecho: decision_flota, valor: reducir}
+    entonces:
+      - {hecho: accion, valor: reducir_unidades}
+    explicacion: La decisión de flota es liberar unidades para otras rutas.
+
+  - id: R53
+    nombre: Reforzar frecuencia
+    prioridad: 20
+    certeza: 0.9
+    si:
+      - {hecho: nivel_demanda, op: en, valor: [alta, critica]}
+      - {hecho: frecuencia_baja, valor: true}
+      - {hecho: sin_servicio_programado, op: desconocido}
+    entonces:
+      - {hecho: accion, valor: reforzar_frecuencia}
+    explicacion: Demanda alta con intervalos largos provoca paradas saturadas.
+
+  - id: R54
+    nombre: Ruta alterna
+    prioridad: 20
+    certeza: 0.9
+    si:
+      - {hecho: estado_servicio, valor: critico}
+      - {hecho: hay_ruta_alterna, valor: true}
+    entonces:
+      - {hecho: accion, valor: sugerir_ruta_alterna}
+    explicacion: Si el servicio está crítico y hay otra ruta por las mismas paradas, conviene desviar usuarios.
+
+  - id: R55
+    nombre: Aviso a usuarios
+    prioridad: 20
+    si:
+      - {hecho: incidente_grave, valor: true}
+    entonces:
+      - {hecho: accion, valor: notificar_usuarios}
+    explicacion: Una incidencia grave debe comunicarse para que el usuario replanee su viaje.
+
+  - id: R56
+    nombre: ETA menos confiable
+    prioridad: 20
+    certeza: 0.9
+    si:
+      - {hecho: estado_servicio, op: en, valor: [degradado, critico]}
+      - {hecho: sin_servicio_programado, op: desconocido}
+    entonces:
+      - {hecho: accion, valor: ampliar_ventana_eta}
+    explicacion: Con el servicio afectado el horario oficial deja de ser buena referencia.
+
+  - id: R57
+    nombre: Velocidad reducida
+    prioridad: 20
+    certeza: 0.9
+    si:
+      - {hecho: modo_vial, valor: true}
+      - {hecho: sin_servicio_programado, op: desconocido}
+    si_alguna:
+      - {hecho: clima_severo, valor: true}
+      - {hecho: visibilidad_reducida, valor: true}
+    entonces:
+      - {hecho: accion, valor: reducir_velocidad_operativa}
+    explicacion: Con tormenta o niebla la seguridad pesa más que la puntualidad.
+
+  - id: R58
+    nombre: Ajuste de horario
+    prioridad: 20
+    certeza: 0.9
+    si:
+      - {hecho: retraso_cronico, valor: true}
+    entonces:
+      - {hecho: accion, valor: ajustar_horario_publicado}
+    explicacion: Si la ruta siempre llega tarde, el horario publicado debe reflejarlo.
+
+  - id: R59
+    nombre: Auditoría de regularidad
+    prioridad: 20
+    certeza: 0.8
+    si:
+      - {hecho: ruta_impredecible, valor: true}
+    entonces:
+      - {hecho: accion, valor: revisar_regularidad}
+    explicacion: Una variación grande del error apunta a problemas de despacho.
+
+  - id: R60
+    nombre: Verificación de GPS
+    prioridad: 20
+    certeza: 0.7
+    si:
+      - {hecho: sin_cobertura_gps, valor: true}
+      - {hecho: hora_pico, valor: true}
+      - {hecho: sin_servicio_programado, op: desconocido}
+    entonces:
+      - {hecho: accion, valor: verificar_gps}
+    explicacion: En hora pico debería haber unidades reportando posición.
+
+  - id: R64
+    nombre: Ruta fuera de servicio
+    prioridad: 20
+    si:
+      - {hecho: sin_servicio_programado, valor: true}
+    entonces:
+      - {hecho: accion, valor: informar_sin_servicio}
+    explicacion: >-
+      A esta hora la ruta no tiene salidas programadas; las acciones de flota,
+      GPS y tiempos de llegada no aplican.
+
+  # ── Estrato 10 · Acciones compuestas ───────────────────────────────────────
+  - id: R70
+    nombre: Plan de contingencia
+    prioridad: 10
+    si:
+      - {hecho: estado_servicio, valor: critico}
+      - {hecho: nivel_demanda, op: en, valor: [alta, critica]}
+      - {hecho: sin_servicio_programado, op: desconocido}
+    entonces:
+      - {hecho: accion, valor: activar_plan_contingencia}
+    explicacion: Servicio crítico con demanda alta es el peor escenario para la ruta.

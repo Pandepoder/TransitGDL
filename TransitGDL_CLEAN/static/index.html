@@ -1,660 +1,79 @@
 <!doctype html>
 <html lang="es">
 <head>
-<meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0E141B">
 <title>TransitGDL</title>
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
-<style>
-*{box-sizing:border-box;margin:0;padding:0}
-body{font-family:system-ui,sans-serif;background:#0c1218;color:#dce8f5;overflow:hidden}
-#map{position:fixed;top:var(--map-top,118px);left:0;right:0;bottom:0;z-index:0;background:#0d1117;transition:top .25s ease}
-.top-chrome{position:fixed;top:0;left:0;right:0;z-index:800;pointer-events:none}
-.top-chrome>*{pointer-events:auto}
-.leaflet-container{background:#0d1117!important;filter:brightness(0.92) contrast(1.05)}
-#banner{padding:10px 14px;font-size:13px;text-align:center;display:none}
-#banner.err{background:#4a1020;color:#ff8fa3;border-bottom:2px solid #ff3355;display:block}
-#banner.ok{background:#0f2a22;color:#5dffb8;border-bottom:2px solid #3dd68c;display:block}
-#banner.load{background:#1a2838;color:#7ec8ff;display:block}
-.bar{display:flex;gap:6px;padding:8px 10px;background:rgba(12,18,28,.94);border-bottom:1px solid rgba(255,255,255,.08);flex-wrap:wrap;align-items:center}
-.bar h1{font-size:17px;margin-right:4px;color:#fff;font-weight:800}
-.bar h1 span{color:#8eb4d4}
-.pill{font-size:10px;padding:4px 8px;border-radius:10px;border:1px solid rgba(255,255,255,.12);background:rgba(0,0,0,.35);color:#a8c4e0}
-.btn{padding:7px 12px;border:none;border-radius:8px;background:#3d8bfd;color:#fff;font-weight:700;font-size:11px;cursor:pointer}
-.chat-fab{position:fixed;left:14px;bottom:14px;z-index:860;width:52px;height:52px;border-radius:50%;border:none;background:linear-gradient(135deg,#3d8bfd,#5eb8ff);color:#fff;font-size:22px;cursor:pointer;box-shadow:0 6px 24px rgba(61,139,253,.45);animation:fab-pulse 2.5s ease-in-out infinite}
-@keyframes fab-pulse{0%,100%{box-shadow:0 6px 24px rgba(61,139,253,.4)}50%{box-shadow:0 8px 32px rgba(94,184,255,.65)}}
-.chat-panel{position:fixed;left:10px;bottom:74px;width:min(340px,calc(100vw - 20px));max-height:min(62vh,480px);z-index:855;background:rgba(12,18,28,.98);border:1px solid rgba(94,184,255,.25);border-radius:16px;display:none;flex-direction:column;overflow:hidden;box-shadow:0 16px 48px rgba(0,0,0,.5);transform:translateY(16px) scale(.96);opacity:0;transition:transform .3s cubic-bezier(.2,.9,.2,1),opacity .25s}
-.chat-panel.open{display:flex;transform:translateY(0) scale(1);opacity:1}
-.chat-hd{padding:10px 12px;border-bottom:1px solid rgba(255,255,255,.08);display:flex;justify-content:space-between;align-items:center;font-weight:700;font-size:13px}
-.chat-msgs{flex:1;overflow-y:auto;padding:10px;display:flex;flex-direction:column;gap:8px;min-height:120px}
-.chat-msg{max-width:92%;padding:8px 11px;border-radius:12px;font-size:12px;line-height:1.45;animation:msg-in .25s ease}
-@keyframes msg-in{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
-.chat-msg.bot{align-self:flex-start;background:rgba(94,184,255,.12);border:1px solid rgba(94,184,255,.2)}
-.chat-msg.user{align-self:flex-end;background:rgba(61,139,253,.35);border:1px solid rgba(61,139,253,.4)}
-.chat-ft{padding:8px;display:flex;gap:6px;border-top:1px solid rgba(255,255,255,.08)}
-.chat-ft input{flex:1}
-.chat-quick{display:flex;flex-wrap:wrap;gap:4px;padding:0 8px 8px}
-.chat-quick button{font-size:10px;padding:4px 8px;border-radius:8px;border:1px solid rgba(255,255,255,.12);background:rgba(0,0,0,.3);color:#a8c4e0;cursor:pointer}
-.eta-big{animation:eta-pop .4s cubic-bezier(.2,.9,.2,1)}
-@keyframes eta-pop{from{transform:scale(.85);opacity:.5}to{transform:scale(1);opacity:1}}
-.btn.sec{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.15);color:#dce8f5}
-.btn.warn{background:#c45c26}
-.btn.sm{padding:5px 8px;font-size:10px}
-.demo-bar{display:flex;gap:6px;padding:6px 10px;background:rgba(18,28,42,.92);border-bottom:1px solid rgba(94,184,255,.15);flex-wrap:wrap;align-items:center}
-.demo-bar span{font-size:10px;color:#7a9bb8;font-weight:700;text-transform:uppercase;letter-spacing:.04em}
-.panel{position:fixed;top:132px;right:10px;bottom:52px;width:min(360px,94vw);z-index:750;background:rgba(14,20,30,.97);border:1px solid rgba(255,255,255,.1);border-radius:14px;display:none;flex-direction:column;overflow:hidden;box-shadow:0 12px 40px rgba(0,0,0,.45);transform:translateX(12px);opacity:0;transition:transform .35s cubic-bezier(.2,.9,.2,1),opacity .3s ease}
-.panel.open{display:flex;transform:translateX(0);opacity:1}
-.panel-hd{padding:10px 12px;border-bottom:1px solid rgba(255,255,255,.08);font-weight:700;font-size:11px;color:#9eb4cc;display:flex;justify-content:space-between;align-items:center}
-.panel-bd{padding:10px 12px;font-size:12px;overflow-y:auto}
-.panel-bd.scroll{flex:1;min-height:0}
-.route-row{display:flex;align-items:center;gap:8px;padding:8px;margin-bottom:5px;border-radius:8px;border:1px solid rgba(255,255,255,.08);cursor:pointer;background:rgba(0,0,0,.25);transition:transform .15s ease,border-color .2s,background .2s}
-.route-row:hover,.route-row.on{border-color:#6a8fad;background:rgba(106,143,173,.12)}
-.route-row:active{transform:scale(.98)}
-.btn{transition:transform .12s ease,filter .2s}
-.btn:active{transform:scale(.96)}
-.sw{width:12px;height:12px;border-radius:50%;flex-shrink:0}
-.sheet{position:fixed;left:10px;right:10px;bottom:10px;max-height:38vh;z-index:850;background:rgba(14,20,30,.98);border:1px solid rgba(255,255,255,.12);border-radius:14px;padding:12px;display:none;overflow-y:auto}
-.sheet.open{display:block}
-.inp,select,textarea{width:100%;padding:8px;margin:4px 0 8px;border-radius:8px;border:1px solid rgba(255,255,255,.12);background:#0a1018;color:#fff;font-size:12px}
-.fb-row{display:flex;gap:4px;flex-wrap:wrap;margin-top:8px}
-.fb-row button{flex:1;min-width:58px}
-.meta{color:#7a9bb8;font-size:11px;line-height:1.5}
-.meta b{color:#c5daf0}
-.eta-big{font-size:38px;color:#8eb4d4;font-weight:800;line-height:1}
-.tag{display:inline-block;padding:2px 8px;border-radius:6px;font-size:10px;font-weight:700;margin:2px 4px 2px 0}
-.tag.live{background:#1a4a32;color:#5dffb8}
-.tag.sched{background:#2a3040;color:#a8c4e0}
-.tag.learn{background:#3a2a10;color:#ffc266}
-.insight{margin-top:8px;padding:8px;border-radius:8px;background:rgba(94,184,255,.08);border:1px solid rgba(94,184,255,.2)}
-#intro{position:fixed;inset:0;z-index:2000;background:rgba(0,0,0,.75);display:flex;align-items:center;justify-content:center;padding:16px}
-#intro .box{max-width:420px;background:#141c28;border:1px solid rgba(255,255,255,.12);border-radius:16px;padding:20px}
-#intro h2{margin-bottom:10px;font-size:18px}
-#intro p{font-size:13px;color:#9eb4cc;line-height:1.55;margin-bottom:8px}
-#intro ul{font-size:12px;color:#7a9bb8;margin:0 0 14px 18px;line-height:1.6}
-.veh-marker{background:transparent!important;border:none!important}
-.veh-wrap{display:flex;flex-direction:column;align-items:center;filter:drop-shadow(0 2px 4px rgba(0,0,0,.6))}
-.veh-svg{display:block}
-.veh-lbl{font-size:9px;font-weight:800;color:#fff;text-shadow:0 1px 3px #000;margin-top:-2px;padding:1px 4px;border-radius:4px;background:rgba(0,0,0,.55)}
-.dock{position:fixed;left:0;right:0;bottom:0;z-index:900;display:flex;background:rgba(10,14,22,.97);border-top:1px solid rgba(255,255,255,.1);padding:4px 6px calc(4px + env(safe-area-inset-bottom));gap:4px}
-.dock button{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;padding:8px 4px;border:none;border-radius:10px;background:transparent;color:#7a9bb8;font-size:10px;font-weight:700;cursor:pointer;transition:background .2s,color .2s}
-.dock button .ico{font-size:18px;line-height:1}
-.dock button.on{background:rgba(61,139,253,.2);color:#dce8f5}
-.panel-tabs{display:flex;gap:4px;padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.08);background:rgba(0,0,0,.2)}
-.panel-tabs button{flex:1;padding:6px;border:none;border-radius:8px;background:transparent;color:#7a9bb8;font-size:10px;font-weight:700;cursor:pointer}
-.panel-tabs button.on{background:rgba(61,139,253,.25);color:#fff}
-.tab-pane{display:none;flex-direction:column;flex:1;min-height:0;overflow:hidden}
-.tab-pane.on{display:flex}
-#map{bottom:52px}
-.chat-panel{bottom:calc(58px + env(safe-area-inset-bottom))}
-.chat-fab{bottom:calc(58px + env(safe-area-inset-bottom))}
-body.panel-open .chat-panel.open,.body.panel-open .chat-fab{bottom:calc(58px + env(safe-area-inset-bottom))}
-@media(max-width:768px){
-  .panel{top:auto;left:0;right:0;width:100%;bottom:52px;height:min(58vh,540px);border-radius:16px 16px 0 0;transform:translateY(110%)}
-  .panel.open{transform:translateY(0)}
-}
-</style>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/maplibre-gl@6.16.0/dist/maplibre-gl.css">
+<link rel="stylesheet" href="/static/css/app.css">
+<script type="module" src="/static/js/main.js"></script>
 </head>
 <body>
-<div id="intro"><div class="box"><h2>Transit<span style="color:#5eb8ff">GDL</span></h2><p>Plataforma de ETA y operación para transporte público sin depender solo de GPS en tiempo real.</p><ul><li>Horario GTFS + vehículos simulados en vivo</li><li>Clima e incidencias ajustan el ETA</li><li>Feedback del usuario mejora predicciones</li></ul><button class="btn" type="button" id="intro-close" style="width:100%">Empezar demo</button></div></div>
-<div class="top-chrome" id="top-chrome">
-<div id="banner" class="load">Cargando mapa…</div>
-<div class="bar">
-  <h1>Transit<span>GDL</span></h1>
-  <span class="pill" id="stat-veh">—</span>
-  <span class="pill" id="stat-routes">—</span>
-  <span class="pill" id="stat-weather">clima —</span>
-  <button class="btn sec sm" type="button" id="btn-chat-bar">💬 Asistente</button>
-  <button class="btn sec sm" type="button" id="btn-docs">API</button>
-  <button class="btn sec sm" type="button" id="btn-loc">📍 Cerca</button>
-  <button class="btn sm" type="button" id="btn-menu">☰ Panel</button>
-</div>
-<div class="demo-bar">
-  <span>Rápido</span>
-  <button class="btn sm sec" type="button" data-quick-route="RG_55">55</button>
-  <button class="btn sm sec" type="button" data-quick-route="RG_231">231</button>
-  <button class="btn sm sec" type="button" data-quick-route="RG_646">646</button>
-  <button class="btn sm sec" type="button" data-quick-route="RG_615">615</button>
-</div>
-</div>
-<div id="map"></div>
-<aside class="panel" id="panel">
-  <div class="panel-tabs" id="panel-tabs">
-    <button type="button" class="on" data-ptab="routes">Rutas</button>
-    <button type="button" data-ptab="eta">ETA</button>
-    <button type="button" data-ptab="tools">Mas</button>
-  </div>
-  <div class="tab-pane on" id="ptab-routes">
-    <div class="panel-hd"><span>Lineas CUCEI / Tonala</span><button class="btn sec sm" type="button" id="btn-inject">Bus demo</button></div>
-    <div class="panel-bd scroll" id="route-list"></div>
-  </div>
-  <div class="tab-pane" id="ptab-eta">
-    <div class="panel-hd">ETA y parada</div>
-    <div class="panel-bd" style="flex:1;overflow-y:auto">
-      <input class="inp" id="stop-q" placeholder="Parada: CUCEI, Tonaltecas, Loma Dorada" autocomplete="off"/>
-      <div id="stop-suggest" class="meta"></div>
-      <div id="eta-box"><p class="meta">Elige ruta y parada o usa el asistente.</p></div>
-      <div id="insights" class="insight" style="display:none"></div>
+<div class="app">
+  <main class="map-wrap" id="map-wrap">
+    <div id="map" class="map" role="region" aria-label="Mapa de rutas y unidades en servicio"></div>
+    <canvas id="vehicle-layer" class="vehicle-layer" aria-hidden="true"></canvas>
+
+    <div class="status" id="status" aria-live="polite">
+      <span class="chip" id="chip-weather"><span class="chip-dot chip-dot--muted"></span><span>Cargando clima…</span></span>
+      <span class="chip" id="chip-live"><span class="chip-dot"></span><span>Conectando…</span></span>
+      <span class="chip chip--muted" id="chip-feed">Datos oficiales del AMG</span>
     </div>
-    <div class="panel-hd">Calificar prediccion</div>
-    <div class="panel-bd" id="fb-section" style="opacity:.45;pointer-events:none">
-      <p class="meta">Tras calcular un ETA, indica si fue preciso.</p>
-      <div class="fb-row">
-        <button class="btn sm sec" type="button" data-rating="1">Antes</button>
-        <button class="btn sm sec" type="button" data-rating="2">Puntual</button>
-        <button class="btn sm sec" type="button" data-rating="3">+5 min</button>
-        <button class="btn sm sec" type="button" data-rating="4">+12 min</button>
-        <button class="btn sm sec" type="button" data-rating="5">+20 min</button>
+
+    <div class="legend" id="legend" hidden>
+      <span class="legend-row"><svg width="28" height="8" aria-hidden="true"><line x1="2" y1="4" x2="26" y2="4" stroke="currentColor" stroke-width="4" stroke-linecap="round"></line></svg><span id="legend-active">Sentido elegido</span></span>
+      <span class="legend-row"><svg width="28" height="8" aria-hidden="true"><line x1="2" y1="4" x2="26" y2="4" stroke="currentColor" stroke-opacity=".6" stroke-width="2.5" stroke-dasharray="2 5" stroke-linecap="round"></line></svg><span>Sentido contrario</span></span>
+      <span class="legend-row"><svg width="28" height="14" aria-hidden="true"><circle cx="14" cy="7" r="6" fill="currentColor"></circle></svg><span>Unidad en vivo, apunta a su rumbo</span></span>
+    </div>
+
+    <div class="map-controls">
+      <button type="button" class="icon-btn" id="zoom-in" aria-label="Acercar"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg></button>
+      <button type="button" class="icon-btn" id="zoom-out" aria-label="Alejar"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"></path></svg></button>
+      <button type="button" class="icon-btn" id="locate" aria-label="Paradas cerca de mi ubicación"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v3M12 19v3M2 12h3M19 12h3"></path></svg></button>
+    </div>
+
+    <div class="toasts" id="toasts" role="status" aria-live="polite"></div>
+  </main>
+
+  <aside class="panel" id="panel" aria-label="Panel de información">
+    <button type="button" class="sheet-handle" id="sheet-handle" aria-label="Cambiar la altura del panel"><span></span></button>
+
+    <div class="panel-head">
+      <div class="brand">
+        <span class="brand-name">Transit<span>GDL</span></span>
+        <span class="brand-sub">Área Metropolitana de Guadalajara</span>
       </div>
-      <p id="fb-msg" class="meta" style="margin-top:6px"></p>
+      <form class="search" id="search-form" role="search" autocomplete="off">
+        <label class="search-label" for="search-input">Ruta, parada o lugar</label>
+        <div class="search-box">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>
+          <input id="search-input" type="search" placeholder="231, T15, CUCEI, Minerva…" role="combobox" aria-expanded="false" aria-controls="search-results" aria-autocomplete="list" spellcheck="false">
+          <button type="button" class="search-clear" id="search-clear" aria-label="Borrar búsqueda" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"></path></svg></button>
+        </div>
+        <ul class="search-results" id="search-results" role="listbox" aria-label="Resultados" hidden></ul>
+      </form>
     </div>
-  </div>
-  <div class="tab-pane" id="ptab-tools">
-    <div class="panel-hd">Demo y clima</div>
-    <div class="panel-bd">
-      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px">
-        <button class="btn sm sec" type="button" data-scenario="eta">ETA CUCEI</button>
-        <button class="btn sm sec" type="button" data-scenario="incident">Incidencia</button>
-        <button class="btn sm sec" type="button" data-scenario="feedback">Aprendizaje</button>
-        <button class="btn sm warn" type="button" id="btn-rain">Lluvia</button>
-        <button class="btn sm sec" type="button" id="btn-clear-weather">Clima real</button>
-      </div>
-      <label class="pill" style="display:flex;align-items:center;gap:6px;margin-bottom:6px;cursor:pointer"><input type="checkbox" id="chk-all-lines"/> Todas las lineas</label>
-      <label class="pill" style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="chk-all-network"/> Toda la red GDL</label>
-    </div>
-    <div class="panel-hd">Incidencia</div>
-    <div class="panel-bd">
-      <textarea id="inc-txt" placeholder="Que esta pasando" rows="2"></textarea>
-      <select id="inc-route"></select>
-      <button class="btn sm" type="button" id="inc-send" style="width:100%">Reportar</button>
-      <p id="inc-msg" class="meta" style="margin-top:6px"></p>
-    </div>
-  </div>
-</aside>
 
-<nav class="dock" id="dock">
-  <button type="button" class="on" data-dock="map"><span class="ico">🗺</span>Mapa</button>
-  <button type="button" data-dock="routes"><span class="ico">🚌</span>Rutas</button>
-  <button type="button" data-dock="chat"><span class="ico">💬</span>Asistente</button>
-  <button type="button" data-dock="tools"><span class="ico">⚙</span>Más</button>
-</nav>
-<div class="sheet" id="sheet"></div>
-<button type="button" class="chat-fab" id="chat-fab" title="Asistente">💬</button>
-<div class="chat-panel" id="chat-panel" aria-hidden="true">
-  <div class="chat-hd"><span>Asistente TransitGDL</span><button type="button" class="btn sec sm" id="chat-close">✕</button></div>
-  <div class="chat-msgs" id="chat-msgs"></div>
-  <div class="chat-quick">
-    <button type="button" data-chat="hola">Hola</button>
-    <button type="button" data-chat="1">ETA</button>
-    <button type="button" data-chat="2">Clima</button>
-    <button type="button" data-chat="3">Rutas en parada</button>
-    <button type="button" data-chat="cuanto falta la 646 en CUCEI">646 → CUCEI</button>
-  </div>
-  <div class="chat-ft">
-    <input class="inp" id="chat-input" placeholder="Escribe tu consulta…" autocomplete="off"/>
-    <button type="button" class="btn sm" id="chat-send">Enviar</button>
-  </div>
+    <div class="tabs" role="tablist" aria-label="Secciones">
+      <button type="button" role="tab" id="tab-arrivals" aria-controls="pane-arrivals" aria-selected="true">Llegadas</button>
+      <button type="button" role="tab" id="tab-routes" aria-controls="pane-routes" aria-selected="false" tabindex="-1">Rutas</button>
+      <button type="button" role="tab" id="tab-expert" aria-controls="pane-expert" aria-selected="false" tabindex="-1">Experto</button>
+      <button type="button" role="tab" id="tab-ops" aria-controls="pane-ops" aria-selected="false" tabindex="-1">Operación</button>
+      <button type="button" role="tab" id="tab-chat" aria-controls="pane-chat" aria-selected="false" tabindex="-1">Asistente</button>
+    </div>
+
+    <div class="panes">
+      <section class="pane" id="pane-arrivals" role="tabpanel" aria-labelledby="tab-arrivals"></section>
+      <section class="pane" id="pane-routes" role="tabpanel" aria-labelledby="tab-routes" hidden></section>
+      <section class="pane" id="pane-expert" role="tabpanel" aria-labelledby="tab-expert" hidden></section>
+      <section class="pane" id="pane-ops" role="tabpanel" aria-labelledby="tab-ops" hidden></section>
+      <section class="pane pane--chat" id="pane-chat" role="tabpanel" aria-labelledby="tab-chat" hidden></section>
+    </div>
+  </aside>
 </div>
-<script>
-const $=id=>document.getElementById(id);
-const MAP_CENTER=[20.605,-103.38];
-const DEMO_ROUTE="RG_646", DEMO_STOP="CUCEI";
-const QUICK_STOPS={RG_55:"CUCEI",RG_231:"CUCEI",RG_646:"CUCEI",RG_615:"CUCEI"};
-let catalog=[], shapes=[], selectedRoute=null, lastEta=null, lastRoute=null, lastStop=null;
-let userMapControl=false, didInitialFit=false, lastFitRoute=null, showAllLines=false;
-let mapRegion="tonala_cucei";
-const vehicleMarkers=new Map();
-let posTimer=null;
-let chatSession=localStorage.getItem("tgdl_chat_session")||("web_"+Math.random().toString(36).slice(2,14));
-localStorage.setItem("tgdl_chat_session",chatSession);
-
-const DEBUG_LOG_URL="http://127.0.0.1:7854/ingest/81405d50-dcf9-4cd0-9bea-00a1a1cc66c9";
-function dbgLog(location,message,data,hypothesisId){
-  // #region agent log
-  fetch(DEBUG_LOG_URL,{method:"POST",headers:{"Content-Type":"application/json","X-Debug-Session-Id":"406e85"},body:JSON.stringify({sessionId:"406e85",location,message,data:data||{},timestamp:Date.now(),hypothesisId})}).catch(()=>{});
-  // #endregion
-}
-
-function syncChromeHeight(){
-  const chrome=$("top-chrome");
-  if(!chrome)return;
-  const h=chrome.offsetHeight||118;
-  document.documentElement.style.setProperty("--map-top",h+"px");
-  $("map").style.top=h+"px";
-  map.invalidateSize();
-}
-window.addEventListener("resize",syncChromeHeight);
-
-const map=L.map("map",{center:MAP_CENTER,zoom:13,zoomControl:false,preferCanvas:true});
-L.control.zoom({position:"bottomleft"}).addTo(map);
-L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",{
-  maxZoom:19,subdomains:"abcd",
-  attribution:'&copy; OSM &copy; CARTO'
-}).addTo(map);
-map.on("zoomend dragend",()=>{userMapControl=true;});
-
-const lines=L.layerGroup().addTo(map), vehicles=L.layerGroup().addTo(map);
-const stops=L.layerGroup().addTo(map), userMk=L.layerGroup().addTo(map);
-
-const VEH_SVG={
-  train:(c)=>`<svg class="veh-svg" width="32" height="20" viewBox="0 0 32 20"><rect x="1" y="4" width="14" height="12" rx="2" fill="${c}" stroke="#fff" stroke-width="1.5"/><rect x="17" y="4" width="14" height="12" rx="2" fill="${c}" stroke="#fff" stroke-width="1.5"/><rect x="4" y="7" width="4" height="3" fill="rgba(255,255,255,.5)"/><rect x="20" y="7" width="4" height="3" fill="rgba(255,255,255,.5)"/></svg>`,
-  tram:(c)=>`<svg class="veh-svg" width="26" height="18" viewBox="0 0 26 18"><rect x="2" y="3" width="22" height="11" rx="3" fill="${c}" stroke="#fff" stroke-width="1.5"/><line x1="2" y1="14" x2="24" y2="14" stroke="#fff" stroke-width="2"/><rect x="6" y="6" width="5" height="4" fill="rgba(255,255,255,.45)"/></svg>`,
-  brt:(c)=>`<svg class="veh-svg" width="30" height="16" viewBox="0 0 30 16"><rect x="1" y="2" width="28" height="11" rx="2" fill="${c}" stroke="#fff" stroke-width="1.5"/><rect x="4" y="5" width="6" height="4" fill="rgba(255,255,255,.4)"/><rect x="20" y="5" width="6" height="4" fill="rgba(255,255,255,.4)"/></svg>`,
-  bus:(c)=>`<svg class="veh-svg" width="22" height="14" viewBox="0 0 22 14"><rect x="2" y="2" width="18" height="9" rx="2" fill="${c}" stroke="#fff" stroke-width="1.5"/><circle cx="6" cy="12" r="1.5" fill="#333"/><circle cx="16" cy="12" r="1.5" fill="#333"/></svg>`
-};
-
-function vehIcon(p){
-  const mode=["train","tram","brt"].includes(p.mode)?p.mode:"bus";
-  const color=p.color||"#8a9baa";
-  const label=(p.short_name||"").slice(0,6);
-  return L.divIcon({
-    className:"veh-marker",
-    html:`<div class="veh-wrap">${VEH_SVG[mode](color)}<span class="veh-lbl">${label}</span></div>`,
-    iconSize:[36,36],iconAnchor:[18,22]
-  });
-}
-
-function esc(s){return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/'/g,"&#39;");}
-function banner(msg,type){
-  const b=$("banner"); b.textContent=msg; b.className=type||"ok"; b.style.display="block";
-}
-async function getJson(url,opts){
-  const r=await fetch(url,opts);
-  if(!r.ok){const t=await r.text();throw new Error(r.status+" "+t.slice(0,100));}
-  return r.json();
-}
-async function postJson(url,body){
-  return getJson(url,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
-}
-
-function drawLines(shapeList){
-  lines.clearLayers();
-  shapeList.forEach(sh=>{
-    if(!sh.coordinates||sh.coordinates.length<2)return;
-    const isSel=selectedRoute===sh.route_id;
-    if(selectedRoute&&!showAllLines&&!isSel)return;
-    const latlngs=sh.coordinates.map(c=>[c[1],c[0]]);
-    const col=sh.color||"#9AA8B5";
-    const opts={lineCap:"round",lineJoin:"round"};
-    if(isSel){
-      L.polyline(latlngs,{...opts,color:"#f0f4f8",weight:10,opacity:0.9})
-        .bindTooltip(`<b>${esc(sh.short_name||"")}</b> ${esc((sh.long_name||"").slice(0,40))}`)
-        .on("click",()=>pickRoute(sh.route_id)).addTo(lines);
-      L.polyline(latlngs,{...opts,color:col,weight:7,opacity:1})
-        .on("click",()=>pickRoute(sh.route_id)).addTo(lines);
-    }else{
-      const op=showAllLines?0.55:0;
-      const w=showAllLines?4:0;
-      if(w>0){
-        L.polyline(latlngs,{...opts,color:col,weight:w,opacity:op})
-          .bindTooltip(`<b>${esc(sh.short_name||"")}</b>`)
-          .on("click",()=>pickRoute(sh.route_id)).addTo(lines);
-      }
-    }
-  });
-}
-
-function drawVehicles(list,allowInitialFit=false){
-  const seen=new Set();
-  const bounds=[];
-  (list||[]).forEach(p=>{
-    if(p.lat==null||p.lon==null)return;
-    seen.add(p.vehicle_id);
-    const ll=[p.lat,p.lon];
-    bounds.push(ll);
-    if(vehicleMarkers.has(p.vehicle_id)){
-      vehicleMarkers.get(p.vehicle_id).setLatLng(ll);
-    }else{
-      const m=L.marker(ll,{icon:vehIcon(p),zIndexOffset:isSelectedVehicle(p)?600:400})
-        .bindPopup(`<b>${esc(p.short_name||p.route_id)}</b> · ${esc(p.mode||"bus")}<br>${Math.round(p.speed_kmh||0)} km/h<br><button onclick="pickRoute('${esc(p.route_id)}')">Ver ruta</button>`)
-        .addTo(vehicles);
-      vehicleMarkers.set(p.vehicle_id,m);
-    }
-  });
-  for(const [id,m] of vehicleMarkers){
-    if(!seen.has(id)){vehicles.removeLayer(m);vehicleMarkers.delete(id);}
-  }
-  $("stat-veh").textContent=(list?.length||0)+" en vivo";
-  if(allowInitialFit&&!didInitialFit&&!userMapControl){
-    try{map.setView(MAP_CENTER,13);didInitialFit=true;}catch(e){}
-  }
-}
-function isSelectedVehicle(p){return selectedRoute&&p.route_id===selectedRoute;}
-
-function buildRouteMenu(){
-  const el=$("route-list");
-  const groups={regional:[],feeder:[],macro:[],sitren:[],metro:[],bus:[]};
-  const labels={regional:"Líneas 55 · 231 · 646 · 615",feeder:"Alimentadoras",macro:"Macrobús",sitren:"SiTren",metro:"Metro",bus:"Otras"};
-  catalog.forEach(r=>(groups[r.layer]||groups.bus).push(r));
-  const priority=["RG_646","RG_55","RG_231","RG_615"];
-  let html="";
-  for(const g of ["regional","feeder","macro","sitren","metro","bus"]){
-    let list=groups[g];
-    if(!list.length)continue;
-    if(g==="regional"){
-      list=[...list].sort((a,b)=>{
-        const pa=priority.indexOf(a.route_id), pb=priority.indexOf(b.route_id);
-        if(pa>=0||pb>=0)return (pa<0?99:pa)-(pb<0?99:pb);
-        return a.short_name.localeCompare(b.short_name);
-      });
-    }else list.sort((a,b)=>a.short_name.localeCompare(b.short_name));
-    html+=`<p class="meta" style="margin:6px 0 2px">${labels[g]||g.toUpperCase()}</p>`;
-    list.forEach(r=>{
-      html+=`<div class="route-row" data-id="${esc(r.route_id)}"><span class="sw" style="background:${esc(r.color)}"></span><span><b>${esc(r.short_name)}</b> <span class="meta">${esc(r.route_id)}</span></span></div>`;
-    });
-  }
-  el.innerHTML=html||"<p class='meta'>Sin rutas</p>";
-  el.querySelectorAll(".route-row").forEach(row=>{row.onclick=()=>pickRoute(row.dataset.id);});
-  $("inc-route").innerHTML="<option value=''>Ruta</option>"+catalog.filter(r=>r.layer!=="bus")
-    .map(r=>`<option value="${esc(r.route_id)}">${esc(r.short_name)} ${esc(r.route_id)}</option>`).join("");
-}
-
-function renderEta(d){
-  lastEta=d;
-  const src=d.source==="live"?"live":"sched";
-  const srcLabel=d.source==="live"?"Tiempo real":"Horario";
-  const learn=d.learned_correction_minutes?`<span class="tag learn">Aprendizaje ${d.learned_correction_minutes>0?"+":""}${d.learned_correction_minutes.toFixed(1)} min</span>`:"";
-  const conf=Math.round((d.confidence||0.85)*100);
-  $("eta-box").innerHTML=`
-    <p class="eta-big">${Math.round(d.estimated_minutes)} min</p>
-    <p><b>${esc(d.stop_name)}</b> · ruta ${esc(d.route_number)}</p>
-    <p style="margin-top:6px"><span class="tag ${src}">${srcLabel}</span>
-    <span class="tag sched">Confianza ${conf}% · ${esc(d.reliability_label||"media")}</span>${learn}</p>
-    <p class="meta">Clima: ${esc(d.weather_condition||"—")} · base: ${esc(d.basis||"")}</p>
-    ${d.alerts?.length?`<p style="color:#e88a5a;margin-top:6px">⚠ ${esc(d.alerts[0])}</p>`:""}
-    <p class="meta" style="margin-top:8px">ID: <code style="font-size:10px">${esc(d.prediction_id)}</code></p>`;
-  const fb=$("fb-section"); fb.style.opacity="1"; fb.style.pointerEvents="auto";
-  $("fb-msg").textContent="";
-}
-
-async function loadInsights(routeId, liveCount){
-  const box=$("insights");
-  try{
-    const d=await getJson("/demo/route-insights/"+encodeURIComponent(routeId));
-    const dem=d.demand, fl=d.fleet;
-    box.style.display="block";
-    box.innerHTML=`<b>Operación</b> · clima <b>${esc(d.weather)}</b>${d.weather_simulated?" (sim)":""}<br>
-      Demanda: <b>${esc(dem.demand_level)}</b> (×${dem.demand_factor}) · ${liveCount} en línea / ${dem.recommended_vehicles} recomendados<br>
-      <span class="meta">${esc(fl.rationale||fl.action||"")}</span>`;
-  }catch{box.style.display="none";}
-}
-
-window.pickRoute=async function(routeId){
-  selectedRoute=routeId; lastRoute=routeId;
-  dbgLog("index.html:pickRoute","route_selected",{routeId},"A");
-  drawLines(shapes);
-  document.querySelectorAll(".route-row").forEach(r=>r.classList.toggle("on",r.dataset.id===routeId));
-  setPanelOpen(true);
-  stops.clearLayers();
-  try{
-    const d=await getJson("/map/routes/"+encodeURIComponent(routeId)+"/detail");
-    (d.stops||[]).forEach(s=>{
-      const sn=esc(s.stop_name).replace(/'/g,"");
-      L.circleMarker([s.lat,s.lon],{radius:6,color:"#fff",weight:2,fillColor:d.color,fillOpacity:.95})
-        .bindPopup(`<b>${esc(s.stop_name)}</b><br><button onclick="eta('${esc(routeId)}','${sn}')">ETA</button>`)
-        .addTo(stops);
-    });
-    if(d.coordinates?.length&&routeId!==lastFitRoute&&!userMapControl){
-      map.flyToBounds(d.coordinates.map(c=>[c[1],c[0]]),{padding:[80,80],maxZoom:14,duration:0.7});
-      lastFitRoute=routeId;
-    }
-    const inc=d.active_incidents?.length?`<p style="color:#e88a5a;margin-top:4px">⚠ Incidencia activa (+~2 min)</p>`:"";
-    $("eta-box").innerHTML=`<p><b>${esc(d.short_name)}</b> · ${d.live_count} vehículos${inc}</p><p class="meta">Toca una parada en el mapa.</p>`;
-    await loadInsights(routeId, d.live_count);
-  }catch(e){$("eta-box").innerHTML=`<p style="color:#ff8fa3">${esc(e.message)}</p>`;}
-};
-
-window.eta=async function(route,stop){
-  lastRoute=route; lastStop=stop;
-  dbgLog("index.html:eta","eta_request",{route,stop},"C");
-  $("eta-box").innerHTML="<p class='meta'>Calculando…</p>";
-  try{
-    const d=await getJson("/eta/?route="+encodeURIComponent(route)+"&stop="+encodeURIComponent(stop));
-    dbgLog("index.html:eta","eta_ok",{route:d.route_number,stop:d.stop_name,minutes:d.estimated_minutes},"C");
-    renderEta(d);
-    if(selectedRoute!==route){selectedRoute=route;drawLines(shapes);}
-  }catch{
-    $("eta-box").innerHTML="<p style='color:#ff8fa3'>Parada no encontrada. Prueba buscar abajo.</p>";
-  }
-};
-
-async function sendFeedback(rating){
-  if(!lastEta?.prediction_id){$("fb-msg").textContent="Calcula un ETA primero.";return;}
-  try{
-    await postJson("/feedback/",{prediction_id:lastEta.prediction_id,rating});
-    $("fb-msg").textContent="✓ Gracias — el modelo aprende por ruta/parada/franja.";
-    $("fb-msg").style.color="#5dffb8";
-    if(lastRoute&&lastStop) setTimeout(()=>eta(lastRoute,lastStop),400);
-  }catch(e){$("fb-msg").textContent="Error: "+e.message;}
-}
-
-let searchTimer;
-$("stop-q").oninput=function(){
-  clearTimeout(searchTimer);
-  const q=this.value.trim();
-  if(q.length<2){$("stop-suggest").innerHTML="";return;}
-  searchTimer=setTimeout(async()=>{
-    try{
-      const d=await getJson("/eta/stops/search?q="+encodeURIComponent(q)+"&limit=6");
-      $("stop-suggest").innerHTML=(d.results||[]).map(m=>{
-        const routes=m.routes||[];
-        const preferred=selectedRoute&&routes.find(x=>x.route_id===selectedRoute);
-        const r=preferred||routes[0]||{};
-        const rid=r.route_id||selectedRoute||DEMO_ROUTE;
-        const sn=esc(m.stop_name).replace(/'/g,"");
-        return `<div style="padding:6px 0;border-bottom:1px solid rgba(255,255,255,.06);cursor:pointer" onclick="pickRoute('${esc(rid)}');eta('${esc(rid)}','${sn}')"><b>${esc(m.stop_name)}</b> <span class="meta">${esc(r.route_short_name||"")}</span></div>`;
-      }).join("")||"<span class='meta'>Sin resultados</span>";
-    }catch{$("stop-suggest").innerHTML="";}
-  },280);
-};
-
-async function runScenario(name){
-  setPanelOpen(true);
-  if(name==="eta"){
-    await pickRoute(DEMO_ROUTE);
-    await eta(DEMO_ROUTE, DEMO_STOP);
-    banner("Escenario: Ruta 646 → parada CUCEI","ok");
-  }else if(name==="incident"){
-    await pickRoute(DEMO_ROUTE);
-    $("inc-route").value=DEMO_ROUTE;
-    $("inc-txt").value="Accidente menor en carril — tráfico lento";
-    await postJson("/incidents/",{description:$("inc-txt").value,affected_routes:[DEMO_ROUTE],severity:"medium"});
-    $("inc-msg").textContent="✓ Incidencia registrada";
-    await eta(DEMO_ROUTE, DEMO_STOP);
-    banner("Escenario 2: incidencia → ETA +~2 min","ok");
-  }else if(name==="feedback"){
-    await pickRoute(DEMO_ROUTE);
-    for(let i=0;i<3;i++){
-      const d=await getJson("/eta/?route="+encodeURIComponent(DEMO_ROUTE)+"&stop="+encodeURIComponent(DEMO_STOP));
-      await postJson("/feedback/",{prediction_id:d.prediction_id,rating:4});
-    }
-    await eta(DEMO_ROUTE, DEMO_STOP);
-    banner("Escenario 3: 3 calificaciones «tarde» → ETA con corrección aprendida","ok");
-  }
-}
-
-document.querySelectorAll("[data-scenario]").forEach(b=>{
-  b.onclick=()=>runScenario(b.dataset.scenario);
-});
-document.querySelectorAll("[data-quick-route]").forEach(b=>{
-  b.onclick=async()=>{
-    const rid=b.dataset.quickRoute;
-    setPanelOpen(true);
-    await pickRoute(rid);
-    const stop=QUICK_STOPS[rid]||"CUCEI";
-    await eta(rid, stop);
-    banner("Ruta "+rid.replace("RG_","")+" → "+stop,"ok");
-  };
-});
-
-$("btn-rain").onclick=async()=>{
-  try{await fetch("/demo/weather?condition=rain",{method:"POST"});refreshWeather();banner("Clima simulado: lluvia (+4 min típico)","ok");if(lastRoute&&lastStop)eta(lastRoute,lastStop);}catch(e){banner(e.message,"err");}
-};
-$("btn-clear-weather").onclick=async()=>{
-  try{await fetch("/demo/weather",{method:"DELETE"});refreshWeather();banner("Clima real restaurado","ok");}catch(e){banner(e.message,"err");}
-};
-async function refreshWeather(){
-  try{const w=await getJson("/demo/weather");$("stat-weather").textContent=(w.simulated?"🌧 ":"")+w.condition+(w.delay_minutes?` +${w.delay_minutes}m`:"");}catch{}
-}
-
-$("btn-inject").onclick=async()=>{
-  const route=selectedRoute||DEMO_ROUTE;
-  try{
-    await fetch(`/demo/inject-vehicle?route_id=${encodeURIComponent(route)}&stop=${encodeURIComponent(lastStop||DEMO_STOP)}`,{method:"POST"});
-    banner("Bus demo inyectado — recalcula ETA","ok");
-    if(lastStop) await eta(route, lastStop);
-    const p=await getJson("/map/positions"); drawVehicles(p.positions,false);
-  }catch(e){banner(e.message,"err");}
-};
-
-$("btn-docs").onclick=()=>window.open("/docs","_blank");
-$("intro-close").onclick=()=>{$("intro").style.display="none";localStorage.setItem("tgdl_intro","1");};
-if(localStorage.getItem("tgdl_intro"))$("intro").style.display="none";
-
-function setPanelOpen(on){
-  $("panel").classList.toggle("open",on);
-  document.body.classList.toggle("panel-open",on);
-}
-$("btn-menu").onclick=()=>setPanelOpen(!$("panel").classList.contains("open"));function setPanelTab(name){const t=document.getElementById('panel-tabs');if(!t)return;t.querySelectorAll('[data-ptab]').forEach(b=>b.classList.toggle('on',b.dataset.ptab===name));document.querySelectorAll('.tab-pane').forEach(p=>p.classList.toggle('on',p.id==='ptab-'+name));}function setDockTab(name){const d=document.getElementById('dock');if(!d)return;d.querySelectorAll('[data-dock]').forEach(b=>b.classList.toggle('on',b.dataset.dock===name));if(name==='map'){setPanelOpen(false);toggleChat(false);}else if(name==='routes'){setPanelOpen(true);setPanelTab('routes');toggleChat(false);}else if(name==='chat'){setPanelOpen(false);toggleChat(true);}else if(name==='tools'){setPanelOpen(true);setPanelTab('tools');toggleChat(false);}syncChromeHeight();}document.querySelectorAll('#dock [data-dock]').forEach(b=>b.onclick=()=>setDockTab(b.dataset.dock));document.querySelectorAll('#panel-tabs [data-ptab]').forEach(b=>b.onclick=()=>setPanelTab(b.dataset.ptab));
-
-function formatBotText(t){
-  return esc(t).replace(/\*([^*]+)\*/g,"<b>$1</b>").replace(/\n/g,"<br>");
-}
-function appendChatMsg(text,who){
-  const box=$("chat-msgs");
-  const el=document.createElement("div");
-  el.className="chat-msg "+who;
-  el.innerHTML=who==="bot"?formatBotText(text):esc(text);
-  box.appendChild(el);
-  box.scrollTop=box.scrollHeight;
-}
-function toggleChat(open){
-  const on=open==null?!$("chat-panel").classList.contains("open"):open;
-  $("chat-panel").classList.toggle("open",on);
-  $("chat-panel").setAttribute("aria-hidden",on?"false":"true");
-}
-async function sendChatMessage(text){
-  const msg=(text||"").trim();
-  if(!msg)return;
-  appendChatMsg(msg,"user");
-  $("chat-input").value="";
-  try{
-    const d=await postJson("/chat/message",{message:msg,session_id:chatSession});
-    chatSession=d.session_id||chatSession;
-    localStorage.setItem("tgdl_chat_session",chatSession);
-    appendChatMsg(d.reply,"bot");
-    dbgLog("index.html:chat","chat_reply",{len:d.reply?.length},"E");
-    const etaMatch=/ruta\s*(\d+|[A-Z][\w-]+)/i.exec(d.reply);
-    const stopMatch=/parada\s*\*?([^*\n]+)\*?/i.exec(d.reply);
-    if(/CUCEI|646|55|231|615/i.test(d.reply)&&etaMatch){
-      const rid=etaMatch[1].match(/^\d+$/)?"RG_"+etaMatch[1]:etaMatch[1];
-      if(d.reply.includes("min")||d.reply.includes("falta")){
-        setPanelOpen(true);
-        await pickRoute(rid.startsWith("RG_")?rid:"RG_"+rid.replace(/\D/g,""));
-        const stop=stopMatch?stopMatch[1].trim():(QUICK_STOPS[rid]||"CUCEI");
-        await eta(rid, stop);
-      }
-    }
-  }catch(e){
-    appendChatMsg("No pude conectar con el asistente. ¿Está corriendo start.bat?","bot");
-  }
-}
-$("chat-fab").onclick=()=>toggleChat();
-$("btn-chat-bar").onclick=()=>toggleChat(true);
-$("chat-close").onclick=()=>toggleChat(false);
-$("chat-send").onclick=()=>sendChatMessage($("chat-input").value);
-$("chat-input").onkeydown=e=>{if(e.key==="Enter")sendChatMessage($("chat-input").value);};
-document.querySelectorAll("[data-chat]").forEach(b=>b.onclick=()=>sendChatMessage(b.dataset.chat));
-document.querySelectorAll("[data-rating]").forEach(b=>b.onclick=()=>sendFeedback(+b.dataset.rating));
-
-$("btn-loc").onclick=()=>{
-  if(!navigator.geolocation){alert("Sin geolocalización");return;}
-  navigator.geolocation.getCurrentPosition(async pos=>{
-    const lat=pos.coords.latitude, lon=pos.coords.longitude;
-    userMk.clearLayers();
-    L.circleMarker([lat,lon],{radius:11,color:"#fff",weight:3,fillColor:"#3dd68c",fillOpacity:1}).addTo(userMk);
-    map.setView([lat,lon],15);
-    const d=await getJson("/map/nearby?lat="+lat+"&lon="+lon+"&radius_km=0.7&limit=12");
-    const sh=$("sheet"); sh.classList.add("open");
-    sh.innerHTML="<b>Cerca de ti</b>"+(d.stops||[]).map(st=>{
-      const sn=esc(st.stop_name).replace(/'/g,"");
-      return `<div style="margin-top:8px;padding:8px;border:1px solid rgba(255,255,255,.08);border-radius:8px"><b>${esc(st.stop_name)}</b> (${st.distance_m} m)<br>${st.routes.map(r=>`<span style="color:${esc(r.color)};cursor:pointer;margin-right:8px" onclick="pickRoute('${esc(r.route_id)}');eta('${esc(r.route_id)}','${sn}')">${esc(r.short_name)}</span>`).join("")}</div>`;
-    }).join("")||"<p class='meta'>Nada cerca</p>";
-  },()=>alert("Permite ubicación"));
-};
-
-$("inc-send").onclick=async()=>{
-  const desc=$("inc-txt").value.trim(), route=$("inc-route").value;
-  if(desc.length<5||!route){$("inc-msg").textContent="Texto + ruta";return;}
-  try{
-    await postJson("/incidents/",{description:desc,affected_routes:[route],severity:"medium"});
-    $("inc-msg").textContent="✓ Guardado"; $("inc-msg").style.color="#5dffb8";
-    if(lastRoute===route&&lastStop) eta(lastRoute,lastStop);
-  }catch{$("inc-msg").textContent="Error";}
-};
-
-$("chk-all-lines").onchange=function(){
-  showAllLines=this.checked;
-  drawLines(shapes);
-};
-$("chk-all-network").onchange=function(){
-  mapRegion=this.checked?"all":"tonala_cucei";
-  reloadMapData();
-};
-
-async function reloadMapData(){
-  banner("Actualizando rutas…","load");
-  try{
-    const boot=await getJson("/map/bootstrap?region="+encodeURIComponent(mapRegion));
-    catalog=boot.routes||[];
-    shapes=boot.shapes||[];
-    selectedRoute=null;
-    lastFitRoute=null;
-    drawLines(shapes);
-    buildRouteMenu();
-    $("stat-routes").textContent=shapes.length+" líneas";
-    banner(mapRegion==="all"?"Red completa cargada":"Zona CUCEI / Tonalá","ok");
-    setTimeout(()=>{if($("banner").classList.contains("ok"))$("banner").style.display="none";},3500);
-  }catch(e){banner(e.message,"err");}
-}
-
-async function refreshPositions(){
-  try{
-    const p=await getJson("/map/positions");
-    drawVehicles(p.positions,false);
-  }catch(e){}
-}
-
-async function loadMap(){
-  banner("Cargando datos…","load");
-  setTimeout(()=>map.invalidateSize(),100);
-  try{
-    const boot=await getJson("/map/bootstrap?region="+encodeURIComponent(mapRegion));
-    catalog=boot.routes||[];
-    shapes=boot.shapes||[];
-    const positions=boot.positions||[];
-    const vehicleCount=boot.vehicle_count||positions.length;
-    $("stat-routes").textContent=shapes.length+" líneas";
-    drawLines(shapes);
-    drawVehicles(positions,true);
-    buildRouteMenu();
-    refreshWeather();
-    if(!vehicleCount) banner("0 vehículos — ejecuta start.bat de nuevo","err");
-    else{
-      banner("Zona CUCEI/Tonalá · "+shapes.length+" rutas en ☰ Panel","ok");
-      setTimeout(()=>{if($("banner").classList.contains("ok"))$("banner").style.display="none";},4500);
-    }
-    if(posTimer)clearInterval(posTimer);
-    posTimer=setInterval(refreshPositions,4000);
-    syncChromeHeight();
-    appendChatMsg("Hola. Soy el mismo asistente que WhatsApp. Prueba «cuanto falta la 646 en CUCEI» o el menú 1-4.","bot");
-  }catch(e){
-    console.error(e);
-    banner("Abre http://127.0.0.1:8000/ con start.bat (no el archivo HTML directo)","err");
-    $("stat-veh").textContent="Sin servidor";
-  }
-}
-loadMap();
-</script>
 </body>
 </html>

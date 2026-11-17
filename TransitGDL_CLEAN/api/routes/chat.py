@@ -7,7 +7,6 @@ from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel, Field
 
 from api.deps import get_bot_handler
-from core.debug_log import agent_log
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -40,19 +39,4 @@ async def chat_message(
 
     handler = get_bot_handler()
     reply = await handler.handle(session_id, text)
-
-    # #region agent log
-    agent_log(
-        "api/routes/chat.py:chat_message",
-        "web_chat_turn",
-        {
-            "session_id": session_id[:12],
-            "msg_len": len(text),
-            "reply_len": len(reply),
-            "preview": text[:40],
-        },
-        hypothesis_id="E",
-    )
-    # #endregion
-
     return ChatResponse(reply=reply, session_id=session_id)

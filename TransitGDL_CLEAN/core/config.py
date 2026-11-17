@@ -13,7 +13,9 @@ try:
 except ImportError:
     pass
 
-DEFAULT_GTFS_PATH = "data/gtfs_guadalajara.zip"
+DEFAULT_GTFS_PATH = "data/gtfs_amg.zip"
+DEFAULT_TRANSIT_DB_PATH = "data/transit.db"
+DEFAULT_LANDMARKS_PATH = "data/landmarks.json"
 DEFAULT_INCIDENTS_DB_PATH = "data/incidents.db"
 DEFAULT_FEEDBACK_DB_PATH = "data/feedback.db"
 
@@ -52,6 +54,12 @@ class TransitEngineConfig:
     weather_longitude: float = float(os.getenv("WEATHER_LONGITUDE", "-103.3438"))
     weather_timeout_seconds: float = float(os.getenv("WEATHER_TIMEOUT_SECONDS", "5"))
     gps_position_ttl_seconds: int = int(os.getenv("GPS_POSITION_TTL_SECONDS", "30"))
+    # Hay una fuente real de posiciones GPS (no solo el simulador): si una ruta
+    # no reporta, vale la pena revisar sus equipos.
+    gps_feed_active: bool = _env_bool("GPS_FEED_ACTIVO", False)
+    # Todas las unidades reportan GPS: el conteo en vivo es la flota en servicio.
+    # Si no, el conteo GPS solo es una muestra y no se compara con la flota.
+    gps_full_coverage: bool = _env_bool("GPS_COBERTURA_COMPLETA", False)
     session_timeout_minutes: int = int(os.getenv("SESSION_TIMEOUT_MINUTES", "10"))
     use_mock_weather: bool = _env_bool("USE_MOCK_WEATHER", False)
     use_memory_cache: bool = field(default_factory=_default_use_memory_cache)
@@ -62,6 +70,16 @@ class TransitEngineConfig:
     twilio_auth_token: str = os.getenv("TWILIO_AUTH_TOKEN", "")
     require_twilio_signature: bool = _env_bool("REQUIRE_TWILIO_SIGNATURE", False)
     default_locale: str = os.getenv("DEFAULT_LOCALE", "es")
+    # Base de transporte derivada del GTFS (se reconstruye sola si falta).
+    transit_db_path: str = os.getenv("TRANSIT_DB_PATH", DEFAULT_TRANSIT_DB_PATH)
+    landmarks_path: str = os.getenv("LANDMARKS_PATH", DEFAULT_LANDMARKS_PATH)
+    # Región cuyas rutas simula la flota de demostración ("" = toda la red).
+    demo_region: str = os.getenv("DEMO_REGION", "tonala_cucei")
+    # Estilo del mapa base (MapLibre). OpenFreeMap no requiere clave; para CARTO
+    # u otro proveedor, pon aquí la URL de su estilo con tu clave.
+    map_style_url: str = os.getenv(
+        "MAP_STYLE_URL", "https://tiles.openfreemap.org/styles/dark"
+    )
 
     def ensure_paths(self) -> None:
         Path(self.gtfs_path).parent.mkdir(parents=True, exist_ok=True)

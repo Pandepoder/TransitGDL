@@ -1,0 +1,568 @@
+{
+  "fuente": "OpenStreetMap (Nominatim) — © colaboradores de OpenStreetMap, licencia ODbL",
+  "generado": "2026-11-14",
+  "lugares": [
+    {
+      "id": "cucei",
+      "nombre": "CUCEI",
+      "tipo": "universidad",
+      "alias": [
+        "centro universitario de ciencias exactas e ingenierias",
+        "udg cucei"
+      ],
+      "lat": 20.659595,
+      "lon": -103.323935,
+      "osm": "way/537525845",
+      "referencia": "CUCEI, Avenida Revolución, Unidad Modelo, Guadalajara, Región Centro, Jalisco, 44430, México"
+    },
+    {
+      "id": "cucea",
+      "nombre": "CUCEA",
+      "tipo": "universidad",
+      "alias": [
+        "centro universitario de ciencias economico administrativas"
+      ],
+      "lat": 20.740194,
+      "lon": -103.381496,
+      "osm": "node/3802568324",
+      "referencia": "Centro Universitario De Ciencias Economico Administrativas - CUCEA, Anillo Periférico Norte Manuel Gómez Morín, Núcleo U"
+    },
+    {
+      "id": "cucsh",
+      "nombre": "CUCSH Belenes",
+      "tipo": "universidad",
+      "alias": [
+        "cucsh",
+        "centro universitario de ciencias sociales y humanidades"
+      ],
+      "lat": 20.7402,
+      "lon": -103.377527,
+      "osm": "node/2717866500",
+      "referencia": "CUCSH Belenes (Universidad de Guadalajara), Prolongación José Parres Arias, Núcleo Universitario Belenes UDG, Zapopan, R"
+    },
+    {
+      "id": "cucs",
+      "nombre": "CUCS",
+      "tipo": "universidad",
+      "alias": [
+        "centro universitario de ciencias de la salud"
+      ],
+      "lat": 20.68649,
+      "lon": -103.33203,
+      "osm": "node/3802568323",
+      "referencia": "Centro Universitario de Ciencias de la Salud, 950, Calle Sierra Mojada, La Perla, Guadalajara, Región Centro, Jalisco, 4"
+    },
+    {
+      "id": "cuaad",
+      "nombre": "CUAAD",
+      "tipo": "universidad",
+      "alias": [
+        "centro universitario de arte arquitectura y diseno"
+      ],
+      "lat": 20.740214,
+      "lon": -103.312391,
+      "osm": "way/134836502",
+      "referencia": "Centro Universitario de Arte, Arquitectura y Diseño - CUAAD, 5075, Calzada Independencia Norte, Panoramica 2a. Sección, "
+    },
+    {
+      "id": "cucba",
+      "nombre": "CUCBA",
+      "tipo": "universidad",
+      "alias": [
+        "centro universitario de ciencias biologicas y agropecuarias"
+      ],
+      "lat": 20.744183,
+      "lon": -103.513153,
+      "osm": "way/128680595",
+      "referencia": "Centro Universitario de Ciencias Biológicas y Agropecuarias (CUCBA), Camino a Campestre Agronomia, Las Agujas, Zapopan, "
+    },
+    {
+      "id": "cutonala",
+      "nombre": "CUTonalá",
+      "tipo": "universidad",
+      "alias": [
+        "cu tonala",
+        "centro universitario de tonala",
+        "cutonala"
+      ],
+      "lat": 20.565835,
+      "lon": -103.227647,
+      "osm": "way/475970868",
+      "referencia": "Centro Universitario de Tonalá, 555, Calle Hidalgo, Colonia Guadalupana, Tonalá, Región Centro, Jalisco, 45425, México"
+    },
+    {
+      "id": "iteso",
+      "nombre": "ITESO",
+      "tipo": "universidad",
+      "alias": [
+        "iteso universidad jesuita"
+      ],
+      "lat": 20.607285,
+      "lon": -103.41601,
+      "osm": "way/294780957",
+      "referencia": "ITESO, 8585, Anillo Periférico Sur Manuel Gómez Morín, Tlaquepaque, San Pedro Tlaquepaque, Región Centro, Jalisco, 45604"
+    },
+    {
+      "id": "tec",
+      "nombre": "Tec de Monterrey",
+      "tipo": "universidad",
+      "alias": [
+        "tecnologico de monterrey",
+        "tec"
+      ],
+      "lat": 20.732035,
+      "lon": -103.453414,
+      "osm": "way/154799825",
+      "referencia": "Residencias Tec de Monterrey, Avenida General Ramón Corona, Sol Real, San Juan de Ocotán, Zapopan, Región Centro, Jalisc"
+    },
+    {
+      "id": "uag",
+      "nombre": "UAG",
+      "tipo": "universidad",
+      "alias": [
+        "universidad autonoma de guadalajara",
+        "autonoma"
+      ],
+      "lat": 20.695423,
+      "lon": -103.419174,
+      "osm": "way/153852614",
+      "referencia": "Universidad Autonoma de Guadalajara, Puerta Aqua, Royal Country, Zapopan, Región Centro, Jalisco, 44100, México"
+    },
+    {
+      "id": "univa",
+      "nombre": "UNIVA",
+      "tipo": "universidad",
+      "alias": [
+        "universidad del valle de atemajac"
+      ],
+      "lat": 20.659649,
+      "lon": -103.419258,
+      "osm": "way/490963338",
+      "referencia": "Universidad del Valle de Atemajac, Avenida Manuel J. Clouthier, Jardines de Guadalupe, Zapopan, Región Centro, Jalisco, "
+    },
+    {
+      "id": "central_nueva",
+      "nombre": "Central Nueva",
+      "tipo": "transporte",
+      "alias": [
+        "nueva central camionera",
+        "central de autobuses",
+        "central camionera",
+        "nueva central"
+      ],
+      "lat": 20.619201,
+      "lon": -103.28552,
+      "osm": "way/149698980",
+      "referencia": "Nueva Central Camionera de Guadalajara, Calle Carlos Salgado, Tlaquepaque, San Pedro Tlaquepaque, Región Centro, Jalisco"
+    },
+    {
+      "id": "central_vieja",
+      "nombre": "Central Vieja",
+      "tipo": "transporte",
+      "alias": [
+        "antigua central camionera",
+        "vieja central",
+        "central vieja"
+      ],
+      "lat": 20.662416,
+      "lon": -103.344725,
+      "osm": "way/1071171086",
+      "referencia": "Central Vieja de Guadalajara, 218, Calle Los Ángeles, Las Conchas, Guadalajara, Región Centro, Jalisco, 44460, México"
+    },
+    {
+      "id": "aeropuerto",
+      "nombre": "Aeropuerto de Guadalajara",
+      "tipo": "transporte",
+      "alias": [
+        "aeropuerto",
+        "aeropuerto internacional"
+      ],
+      "lat": 20.528725,
+      "lon": -103.313537,
+      "osm": "relation/16658153",
+      "referencia": "Aeropuerto Internacional de Guadalajara Don Miguel Hidalgo y Costilla, Flor de Hortencia, Zapote del Valle, Tlajomulco d"
+    },
+    {
+      "id": "catedral",
+      "nombre": "Catedral de Guadalajara",
+      "tipo": "centro",
+      "alias": [
+        "catedral",
+        "centro historico",
+        "centro de guadalajara"
+      ],
+      "lat": 20.677133,
+      "lon": -103.346969,
+      "osm": "way/89819878",
+      "referencia": "Catedral de la Asunción de María Santísima, 10, Calle Liceo, Guadalajara Centro, Guadalajara, Región Centro, Jalisco, 44"
+    },
+    {
+      "id": "san_juan_de_dios",
+      "nombre": "Mercado San Juan de Dios",
+      "tipo": "centro",
+      "alias": [
+        "san juan de dios",
+        "mercado libertad"
+      ],
+      "lat": 20.675476,
+      "lon": -103.340018,
+      "osm": "relation/11654088",
+      "referencia": "Mercado Libertad (San Juan de Dios), Avenida Francisco Javier Mina, San Juan de Dios, Guadalajara, Región Centro, Jalisc"
+    },
+    {
+      "id": "cabanas",
+      "nombre": "Hospicio Cabañas",
+      "tipo": "centro",
+      "alias": [
+        "cabanas",
+        "museo cabanas",
+        "plaza tapatia"
+      ],
+      "lat": 20.676871,
+      "lon": -103.337705,
+      "osm": "relation/1776246",
+      "referencia": "Instituto Cultural Cabañas, Plaza de Iberoamérica, San Juan de Dios, Guadalajara, Región Centro, Jalisco, 44360, México"
+    },
+    {
+      "id": "degollado",
+      "nombre": "Teatro Degollado",
+      "tipo": "centro",
+      "alias": [
+        "degollado"
+      ],
+      "lat": 20.677016,
+      "lon": -103.344473,
+      "osm": "way/89819880",
+      "referencia": "Teatro Degollado, Calle Degollado, Guadalajara Centro, Guadalajara, Región Centro, Jalisco, 44100, México"
+    },
+    {
+      "id": "expiatorio",
+      "nombre": "Templo Expiatorio",
+      "tipo": "centro",
+      "alias": [
+        "expiatorio"
+      ],
+      "lat": 20.673657,
+      "lon": -103.358853,
+      "osm": "relation/11826712",
+      "referencia": "Templo Expiatorio del Santísimo Sacramento, Ciclovía López Cotilla, Arcos Vallarta, Guadalajara, Región Centro, Jalisco,"
+    },
+    {
+      "id": "minerva",
+      "nombre": "Glorieta Minerva",
+      "tipo": "centro",
+      "alias": [
+        "minerva",
+        "la minerva"
+      ],
+      "lat": 20.674434,
+      "lon": -103.387375,
+      "osm": "way/179079017",
+      "referencia": "Glorieta Minerva, Guadalajara, Región Centro, Jalisco, México"
+    },
+    {
+      "id": "arcos",
+      "nombre": "Arcos Vallarta",
+      "tipo": "centro",
+      "alias": [
+        "arcos",
+        "los arcos"
+      ],
+      "lat": 20.672654,
+      "lon": -103.381198,
+      "osm": "way/623287119",
+      "referencia": "Arcos Vallarta, Guadalajara, Región Centro, Jalisco, 44130, México"
+    },
+    {
+      "id": "agua_azul",
+      "nombre": "Parque Agua Azul",
+      "tipo": "parque",
+      "alias": [
+        "agua azul"
+      ],
+      "lat": 20.659862,
+      "lon": -103.348192,
+      "osm": "relation/13589817",
+      "referencia": "Parque Agua Azul, Guadalajara, Región Centro, Jalisco, México"
+    },
+    {
+      "id": "zoologico",
+      "nombre": "Zoológico Guadalajara",
+      "tipo": "parque",
+      "alias": [
+        "zoologico",
+        "zoo"
+      ],
+      "lat": 20.728875,
+      "lon": -103.307084,
+      "osm": "way/138277734",
+      "referencia": "Zoológico Guadalajara, 600, Volcán Pico de Orizaba 368, Panoramica 1a. Sección, Ex Hacienda de los Ibarra, Guadalajara, "
+    },
+    {
+      "id": "metropolitano",
+      "nombre": "Parque Metropolitano",
+      "tipo": "parque",
+      "alias": [
+        "metropolitano"
+      ],
+      "lat": 20.672204,
+      "lon": -103.440417,
+      "osm": "way/277159707",
+      "referencia": "Parque Metropolitano, 5800, Zapopan, Región Centro, Jalisco, México"
+    },
+    {
+      "id": "colomos",
+      "nombre": "Bosque Los Colomos",
+      "tipo": "parque",
+      "alias": [
+        "colomos",
+        "los colomos"
+      ],
+      "lat": 20.706011,
+      "lon": -103.390642,
+      "osm": "relation/9797580",
+      "referencia": "Bosque Los Colomos, Guadalajara, Región Centro, Jalisco, México"
+    },
+    {
+      "id": "estadio_jalisco",
+      "nombre": "Estadio Jalisco",
+      "tipo": "estadio",
+      "alias": [
+        "jalisco estadio"
+      ],
+      "lat": 20.704786,
+      "lon": -103.327674,
+      "osm": "way/1014985700",
+      "referencia": "Estadio Jalisco, 1772, 7 Colinas, UH Independencia, Guadalajara, Región Centro, Jalisco, 44290, México"
+    },
+    {
+      "id": "estadio_akron",
+      "nombre": "Estadio Akron",
+      "tipo": "estadio",
+      "alias": [
+        "akron",
+        "estadio chivas"
+      ],
+      "lat": 20.681847,
+      "lon": -103.462672,
+      "osm": "way/133439454",
+      "referencia": "Estadio Akron, 2800, Circuito JVC, San Juan de Ocotán, Zapopan, Región Centro, Jalisco, 45019, México"
+    },
+    {
+      "id": "auditorio_telmex",
+      "nombre": "Auditorio Telmex",
+      "tipo": "estadio",
+      "alias": [
+        "telmex"
+      ],
+      "lat": 20.733308,
+      "lon": -103.381358,
+      "osm": "way/160554502",
+      "referencia": "Auditorio Telmex, Avenida José Parres Arias, Industrial Los Belenes, Zapopan, Región Centro, Jalisco, 45157, México"
+    },
+    {
+      "id": "expo",
+      "nombre": "Expo Guadalajara",
+      "tipo": "comercio",
+      "alias": [
+        "expo"
+      ],
+      "lat": 20.653107,
+      "lon": -103.391461,
+      "osm": "way/152541361",
+      "referencia": "Expo Guadalajara, Avenida de las Rosas, Rinconada del Bosque, Guadalajara, Región Centro, Jalisco, 44530, México"
+    },
+    {
+      "id": "plaza_del_sol",
+      "nombre": "Plaza del Sol",
+      "tipo": "comercio",
+      "alias": [
+        "plaza sol"
+      ],
+      "lat": 20.650179,
+      "lon": -103.401785,
+      "osm": "way/298328153",
+      "referencia": "Plaza del Sol, 2375, Lateral de López Mateos Sur, Rinconada del Sol, Zapopan, Región Centro, Jalisco, 45050, México"
+    },
+    {
+      "id": "galerias",
+      "nombre": "Galerías Guadalajara",
+      "tipo": "comercio",
+      "alias": [
+        "galerias",
+        "plaza galerias"
+      ],
+      "lat": 20.676899,
+      "lon": -103.432026,
+      "osm": "way/96880872",
+      "referencia": "Galerías Guadalajara, Avenida Rafael Sanzio, Eucalipto Vallarta, Zapopan, Región Centro, Jalisco, 45020, México"
+    },
+    {
+      "id": "andares",
+      "nombre": "Andares",
+      "tipo": "comercio",
+      "alias": [
+        "plaza andares"
+      ],
+      "lat": 20.710528,
+      "lon": -103.41158,
+      "osm": "relation/19027126",
+      "referencia": "Centro Comercial Andares, Real del Acueducto, Santa Isabel, Zapopan, Región Centro, Jalisco, 45116, México"
+    },
+    {
+      "id": "gran_plaza",
+      "nombre": "La Gran Plaza",
+      "tipo": "comercio",
+      "alias": [
+        "gran plaza"
+      ],
+      "lat": 20.67365,
+      "lon": -103.404997,
+      "osm": "way/274989113",
+      "referencia": "La Gran Plaza, 3959, Avenida San Ignacio, Jardines de San Ignacio, Zapopan, Región Centro, Jalisco, 45040, México"
+    },
+    {
+      "id": "centro_magno",
+      "nombre": "Centro Magno",
+      "tipo": "comercio",
+      "alias": [
+        "magno"
+      ],
+      "lat": 20.673841,
+      "lon": -103.380649,
+      "osm": "way/317256456",
+      "referencia": "Centro Magno, Calle Lope de Vega, Arcos Vallarta, Guadalajara, Región Centro, Jalisco, 44130, México"
+    },
+    {
+      "id": "forum",
+      "nombre": "Forum Tlaquepaque",
+      "tipo": "comercio",
+      "alias": [
+        "forum"
+      ],
+      "lat": 20.64737,
+      "lon": -103.319861,
+      "osm": "way/146309170",
+      "referencia": "Forum Tlaquepaque, Calle Río Zapotlanejo, Guadalajara, Región Centro, Jalisco, 44870, México"
+    },
+    {
+      "id": "plaza_patria",
+      "nombre": "Plaza Patria",
+      "tipo": "comercio",
+      "alias": [
+        "patria plaza"
+      ],
+      "lat": 20.712419,
+      "lon": -103.375283,
+      "osm": "way/765854478",
+      "referencia": "Plaza Patria, Avenida de la Patria, Lagos del Country, Zapopan, Guadalajara, Región Centro, Jalisco, 38901, México"
+    },
+    {
+      "id": "abastos",
+      "nombre": "Mercado de Abastos",
+      "tipo": "comercio",
+      "alias": [
+        "abastos"
+      ],
+      "lat": 20.65209,
+      "lon": -103.38025,
+      "osm": "way/604325817",
+      "referencia": "Parque Mercado de Abastos, Guadalajara, Región Centro, Jalisco, México"
+    },
+    {
+      "id": "tonala_centro",
+      "nombre": "Tonalá Centro",
+      "tipo": "municipio",
+      "alias": [
+        "tonala",
+        "centro de tonala",
+        "plaza cihualpilli"
+      ],
+      "lat": 20.624188,
+      "lon": -103.242237,
+      "osm": "way/481696745",
+      "referencia": "Plaza Cihualpilli, Tonalá, Región Centro, Jalisco, México"
+    },
+    {
+      "id": "tlaquepaque_centro",
+      "nombre": "Tlaquepaque Centro",
+      "tipo": "municipio",
+      "alias": [
+        "tlaquepaque",
+        "centro de tlaquepaque",
+        "el parian"
+      ],
+      "lat": 20.63883,
+      "lon": -103.311281,
+      "osm": "relation/20359489",
+      "referencia": "El Parían de Tlaquepaque, Calle Herrera y Cairo, Tlaquepaque, San Pedro Tlaquepaque, Región Centro, Jalisco, 45500, Méxi"
+    },
+    {
+      "id": "zapopan_centro",
+      "nombre": "Zapopan Centro",
+      "tipo": "municipio",
+      "alias": [
+        "zapopan",
+        "basilica de zapopan",
+        "centro de zapopan"
+      ],
+      "lat": 20.721328,
+      "lon": -103.392347,
+      "osm": "relation/11855622",
+      "referencia": "Basílica de Nuestra Señora de Zapopan, 152, Calle Eva Briseño, Zapopan Centro, Zapopan, Región Centro, Jalisco, 44250, M"
+    },
+    {
+      "id": "loma_dorada",
+      "nombre": "Loma Dorada",
+      "tipo": "colonia",
+      "alias": [
+        "loma dorada tonala"
+      ],
+      "lat": 20.634657,
+      "lon": -103.255964,
+      "osm": "way/847817387",
+      "referencia": "Avenida Loma Dorada Norte, Tonalá, Región Centro, Jalisco, 45410, México"
+    },
+    {
+      "id": "hospital_civil_viejo",
+      "nombre": "Hospital Civil Viejo",
+      "tipo": "salud",
+      "alias": [
+        "hospital civil",
+        "fray antonio alcalde",
+        "civil viejo"
+      ],
+      "lat": 20.687692,
+      "lon": -103.34354,
+      "osm": "way/217101009",
+      "referencia": "Hospital Civil Fray Antonio Alcalde, Calle Fray Junípero Serra, Barranquitas, Guadalajara, Región Centro, Jalisco, 44280"
+    },
+    {
+      "id": "hospital_civil_nuevo",
+      "nombre": "Hospital Civil Nuevo",
+      "tipo": "salud",
+      "alias": [
+        "juan i menchaca",
+        "civil nuevo",
+        "nuevo hospital civil"
+      ],
+      "lat": 20.686533,
+      "lon": -103.333882,
+      "osm": "way/226423976",
+      "referencia": "HOSPITAL CIVIL NUEVO Dr. Juan I. Menchaca, Calle Salvador Quevedo y Zubieta, La Perla, Guadalajara, Región Centro, Jalis"
+    },
+    {
+      "id": "centro_medico",
+      "nombre": "Centro Médico de Occidente",
+      "tipo": "salud",
+      "alias": [
+        "centro medico",
+        "imss centro medico"
+      ],
+      "lat": 20.685571,
+      "lon": -103.328883,
+      "osm": "way/169924351",
+      "referencia": "Centro Médico de Occidente IMSS, Privada Sierra Grande, Guadalajara, Región Centro, Jalisco, 44340, México"
+    }
+  ]
+}

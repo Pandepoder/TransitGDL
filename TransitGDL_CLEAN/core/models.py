@@ -46,6 +46,9 @@ class IncidentSeverity(str, Enum):
     CRITICAL = "critical"
 
 
+_SYSTEM_PREFIX = {"tren": "Tren", "sitren": "SiTren"}
+
+
 class Route(FlexibleModel):
     model_config = ConfigDict(extra="ignore")
 
@@ -54,10 +57,30 @@ class Route(FlexibleModel):
     route_long_name: str = ""
     route_type: int = 3
     agency_id: Optional[str] = None
+    # Datos derivados al construir la base de transporte.
+    mode: str = "bus"  # tren | brt | bus | trolebus
+    group: str = "bus"  # tren | macro | sitren | troncal | complementaria | ...
+    legacy_number: Optional[str] = None  # número antiguo de la ruta (p. ej. 646)
+    branch_name: str = ""  # nombre del ramal (p. ej. "Rio Nilo - Guadalupe")
+    color: Optional[str] = None  # color para mostrar, #RRGGBB
+    has_frequency: bool = True
 
     @property
     def display_name(self) -> str:
         return self.route_short_name or self.route_id
+
+    @property
+    def label(self) -> str:
+        """
+        Clave oficial con el número antiguo, p. ej. "T15 (antes 231)". El Tren
+        Ligero y SiTren comparten claves ("L3"), así que llevan el sistema:
+        "Tren L3", "SiTren L3".
+        """
+        if self.group in _SYSTEM_PREFIX:
+            return f"{_SYSTEM_PREFIX[self.group]} {self.display_name}"
+        if self.legacy_number and self.legacy_number != self.route_short_name:
+            return f"{self.display_name} (antes {self.legacy_number})"
+        return self.display_name
 
 
 class Stop(FlexibleModel):
@@ -93,6 +116,11 @@ class BusPosition(FlexibleModel):
     lon: float
     speed_kmh: float = 0.0
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    # Datos opcionales que enriquecen la posición (los publica el simulador;
+    # un GPS real puede omitirlos y el motor los deduce).
+    pattern_id: Optional[str] = None  # patrón (ruta y sentido) que recorre
+    bearing: Optional[float] = None  # rumbo en grados, 0 = norte
+    progress_m: Optional[float] = None  # metros recorridos sobre el trazo
 
     @field_validator("timestamp", mode="before")
     @classmethod
@@ -151,12 +179,15 @@ class ETAResult(FlexibleModel):
     stop_name: str
     estimated_minutes: float
     confidence: float = 0.85
-    source: str = "schedule"
+    source: str = "schedule"  # "live" | "schedule"
     delay_minutes: float = 0.0
     vehicle_id: Optional[str] = None
     vehicle_lat: Optional[float] = None
     vehicle_lon: Optional[float] = None
     route_id: Optional[str] = None
+    # Coordenadas de la parada, para marcarla en el mapa.
+    stop_lat: Optional[float] = None
+    stop_lon: Optional[float] = None
     service_day_offset: int = 0
     basis: str = "horario_oficial"
     reliability_label: str = "media"
@@ -172,36 +203,78 @@ class ETAResult(FlexibleModel):
     learned_correction_minutes: float = 0.0
     # Condición climática en el momento de la predicción (para PredictionRecord)
     weather_condition: str = "unknown"
+    weather_label: Optional[str] = None
+    # Sentido del viaje: destino que anuncia la unidad y patrón de la base.
+    headsign: Optional[str] = None
+    direction_id: Optional[int] = None
+    pattern_id: Optional[str] = None
+    # Clave con el número antiguo, p. ej. "T15 (antes 231)".
+    route_label: Optional[str] = None
+    # Si la parada se eligió por un lugar ("CUCEI"): nombre y distancia a pie.
+    place_name: Optional[str] = None
+    walk_meters: Optional[float] = None
+    # Cómo se calculó: "vehiculo" (unidad en vivo), "frecuencia" u "horario".
+    method: str = "horario"
+    # Estimación antes de la corrección aprendida.
+    base_minutes: Optional[float] = None
+    # En vivo: metros que le faltan a la unidad y llegadas de las siguientes.
+    vehicle_distance_m: Optional[float] = None
+    next_arrivals_minutes: list[float] = Field(default_factory=list)
+    # Con rastreo parcial: minutos de la unidad rastreada más próxima cuando
+    # llega tan tarde que el cálculo usa la frecuencia programada.
+    tracked_vehicle_minutes: Optional[float] = None
+    # Otros sentidos o ramales que pasan por la misma parada, en una línea cada uno.
+    other_options: list[str] = Field(default_factory=list)
+    # Avisos sobre la calidad de los datos oficiales del recorrido.
+    data_notes: list[str] = Field(default_factory=list)
+
+    def _range_label(self) -> str:
+        if self.window_start_minutes is None or self.window_end_minutes is None:
+            return ""
+        low, high = round(self.window_start_minutes), round(self.window_end_minutes)
+        if high <= low:
+            return ""
+        return f"entre {self._format_eta(low)} y {self._format_eta(high)}"
+
+    def _source_label(self) -> str:
+        if self.method == "vehiculo":
+            if self.vehicle_distance_m is not None:
+                km = self.vehicle_distance_m / 1000.0
+                where = f"{km:.1f} km" if km >= 1 else f"{round(km * 100) * 10} m"
+                return f"unidad en vivo a {where}"
+            return "unidad en vivo"
+        if self.method == "frecuencia":
+            return "frecuencia programada"
+        return "horario"
 
     def to_whatsapp_message(self) -> str:
         minutes = max(0, round(self.estimated_minutes))
-        confidence_pct = round(max(0.0, min(1.0, self.confidence)) * 100)
-        source_label = "tiempo real" if self.source == "live" else "horario oficial"
+        header = f"*Ruta {self.route_label or self.route_number}*"
+        if self.headsign:
+            header += f" hacia *{self.headsign}*"
+        header += f" en *{self.stop_name}*"
+        if self.place_name and self.walk_meters is not None:
+            header += f" (a {round(self.walk_meters / 10) * 10} m de {self.place_name})"
+
         eta_label = f"Llegada estimada: *{self._format_eta(minutes)}*"
         if self.service_day_offset > 0:
             eta_label = f"Próxima salida: *mañana en {self._format_eta(minutes)}*"
+        elif self.method == "frecuencia":
+            eta_label = f"Espera media: *{self._format_eta(minutes)}*"
+        range_label = self._range_label()
+        if range_label and self.service_day_offset == 0:
+            eta_label += f" ({range_label})"
 
         lines = [
-            f"*Ruta {self.route_number}* en *{self.stop_name}*",
+            header,
             eta_label,
-            f"Base: {source_label} | Confianza: {self.reliability_label} ({confidence_pct}%)",
+            f"Dato: {self._source_label()} | Confianza: {self.reliability_label}",
         ]
 
         if self.average_headway_minutes:
-            lines.append(
-                f"Frecuencia programada: cada ~{round(self.average_headway_minutes)} min"
-            )
+            lines.append(f"Pasa cada {round(self.average_headway_minutes)} min")
 
-        if (
-            self.window_start_minutes is not None
-            and self.window_end_minutes is not None
-        ):
-            lines.append(
-                "Ventana esperada: "
-                f"*{self._format_eta(round(self.window_start_minutes))} a {self._format_eta(round(self.window_end_minutes))}*"
-            )
-
-        if self.delay_minutes:
+        if self.delay_minutes >= 0.5:
             lines.append(
                 f"Ajuste por clima/incidencias: +{round(self.delay_minutes)} min"
             )
@@ -209,10 +282,16 @@ class ETAResult(FlexibleModel):
         if abs(self.learned_correction_minutes) >= 1.0:
             sign = "+" if self.learned_correction_minutes > 0 else ""
             lines.append(
-                f"Ajuste por historial: {sign}{round(self.learned_correction_minutes)} min 📊"
+                f"Ajuste por historial: {sign}{round(self.learned_correction_minutes)} min"
             )
 
-        if self.next_departures:
+        if self.next_arrivals_minutes:
+            following = ", ".join(
+                self._format_eta(round(value))
+                for value in self.next_arrivals_minutes[:2]
+            )
+            lines.append(f"Después: {following}")
+        elif self.next_departures:
             departures_label = ", ".join(
                 dep.display_time() for dep in self.next_departures[:3]
             )
@@ -221,7 +300,28 @@ class ETAResult(FlexibleModel):
         if self.alerts:
             lines.append("Avisos: " + "; ".join(self.alerts[:2]))
 
+        # Avisos sobre los datos oficiales (ruta del catálogo sin viajes, tiempos
+        # reconstruidos, recorrido incompleto): el usuario debe saberlo.
+        for note in self.data_notes[:2]:
+            lines.append(f"Datos: {note}")
+
+        if self.other_options:
+            lines.append("También pasan por aquí:")
+            lines.extend(self.other_options[:3])
+
         return "\n".join(lines)
+
+    def compact_line(self) -> str:
+        """Resumen de una línea, para listar otros sentidos o ramales."""
+        minutes = max(0, round(self.estimated_minutes))
+        label = self.route_label or self.route_number
+        when = (
+            f"mañana en {self._format_eta(minutes)}"
+            if self.service_day_offset > 0
+            else self._format_eta(minutes)
+        )
+        direction = f" hacia *{self.headsign}*" if self.headsign else ""
+        return f"· {label}{direction}: *{when}* (parada {self.stop_name})"
 
     @staticmethod
     def _format_eta(minutes: int) -> str:
@@ -245,32 +345,42 @@ class DemandSnapshot(FlexibleModel):
     peak_hour: bool = False
     holiday: bool = False
     rationale: str = ""
+    # Plan de flota según el horario (ver core.fleet).
+    headway_minutes: Optional[float] = None
+    cycle_minutes: Optional[float] = None
+    required_vehicles: Optional[int] = None
+    coverage: Optional[float] = None
 
 
 class FleetRecommendation(FlexibleModel):
     model_config = ConfigDict(extra="ignore")
 
     route_id: str
-    current_vehicles: int
+    # Flota en servicio informada; None si no hay conteo real.
+    current_vehicles: Optional[int] = None
     recommended_vehicles: int
     action: FleetAction = FleetAction.KEEP
     demand_level: str = "normal"
     rationale: str = ""
     weather_condition: WeatherCondition = WeatherCondition.UNKNOWN
     demand_factor: float = 1.0
+    headway_minutes: Optional[float] = None
+    cycle_minutes: Optional[float] = None
+    coverage: Optional[float] = None
 
     def summary(self) -> str:
-        if self.action == FleetAction.ADD_VEHICLES:
-            return (
-                f"Agregar {self.recommended_vehicles - self.current_vehicles} unidades"
-            )
-        if self.action == FleetAction.REDUCE_VEHICLES:
-            return (
-                f"Reducir {self.current_vehicles - self.recommended_vehicles} unidades"
-            )
+        current = self.current_vehicles
         if self.action == FleetAction.ALERT:
             return "Enviar alerta operativa"
-        return "Mantener operacion actual"
+        if current is None:
+            if self.action in (FleetAction.ADD_VEHICLES, FleetAction.REDUCE_VEHICLES):
+                return f"Operar con {self.recommended_vehicles} unidades"
+            return f"El horario pide {self.recommended_vehicles} unidades"
+        if self.action == FleetAction.ADD_VEHICLES:
+            return f"Agregar {self.recommended_vehicles - current} unidades"
+        if self.action == FleetAction.REDUCE_VEHICLES:
+            return f"Reducir {current - self.recommended_vehicles} unidades"
+        return "Mantener operación actual"
 
 
 class Incident(FlexibleModel):
@@ -284,8 +394,14 @@ class Incident(FlexibleModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     resolved_at: Optional[datetime] = None
     stop_ids: list[str] = Field(default_factory=list)
+    # Si nadie la resuelve, deja de contar como activa en este momento.
+    expires_at: Optional[datetime] = None
+    # Ubicación aproximada, para saber qué tramo de la ruta afecta.
+    lat: Optional[float] = None
+    lon: Optional[float] = None
+    source: str = "web"  # "web" | "bot" | "operador"
 
-    @field_validator("created_at", "resolved_at", mode="before")
+    @field_validator("created_at", "resolved_at", "expires_at", mode="before")
     @classmethod
     def _ensure_datetime(cls, value: Any) -> datetime | None:
         if value is None:

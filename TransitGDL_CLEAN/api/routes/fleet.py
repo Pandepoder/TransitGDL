@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Optional
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from api.deps import get_engine, get_locale
@@ -10,10 +12,14 @@ router = APIRouter(prefix="/fleet", tags=["fleet"])
 
 @router.get("/recommend")
 async def recommend(
-    route_id: str = Query(
-        ..., min_length=1, max_length=32, pattern=r"^[A-Za-z0-9 _-]+$"
+    route_id: str = Query(..., min_length=1, max_length=32, pattern=r"^[\w -]+$"),
+    vehicles: Optional[int] = Query(
+        None,
+        ge=0,
+        le=500,
+        description="Flota en servicio (conteo del operador). Sin ella, solo se "
+        "informa lo que pide el horario.",
     ),
-    vehicles: int = Query(..., ge=0, le=500),
     locale: str = Depends(get_locale),
 ):
     route_id = route_id.strip()

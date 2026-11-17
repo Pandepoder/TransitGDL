@@ -43,6 +43,8 @@ Thumbs.db
 # Bases de datos runtime — nunca commitear datos reales
 *.sqlite3
 *.db
+*.db-wal
+*.db-shm
 data/*.db
 
 # Reportes generados

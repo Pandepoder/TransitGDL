@@ -1,46 +1,59 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 
-from .feedback_store import FeedbackStore
+from .feedback_store import BiasStats, FeedbackStore
+from .params import APRENDIZAJE
 
 logger = logging.getLogger(__name__)
 
-# ── Constantes de aprendizaje ──────────────────────────────────────────────────
-#
-# EMA_ALPHA controla qué tan rápido aprende el sistema.
-#   - 0.1 → aprende lento, más estable ante valores atípicos.
-#   - 0.3 → aprende más rápido, más reactivo a cambios recientes.
-#
-# MIN_SAMPLES_TO_APPLY: mínimo de calificaciones para activar la corrección.
-# MAX_CORRECTION_MINUTES: límite absoluto para no sobrecompensar.
+# Parada comodín: estadísticas de toda la ruta y sentido en una franja.
+ROUTE_LEVEL = "*"
 
-EMA_ALPHA = 0.2
-MIN_SAMPLES_TO_APPLY = 3
-MAX_CORRECTION_MINUTES = 20.0
-MAX_CONFIDENCE_BOOST = 0.07
-MAX_CONFIDENCE_PENALTY = 0.10
+EMA_ALPHA = float(APRENDIZAJE["alfa"])
+MIN_SAMPLES_TO_APPLY = int(APRENDIZAJE["min_muestras"])
+MIN_ROUTE_SAMPLES = int(APRENDIZAJE["min_muestras_ruta"])
+WEIGHT_K = float(APRENDIZAJE["peso_k"])
+MAX_CORRECTION_MINUTES = float(APRENDIZAJE["correccion_max_min"])
+MIN_SAMPLES_FOR_SPREAD = int(APRENDIZAJE["muestras_para_dispersion"])
+
+
+def period_of(hour: int) -> str:
+    """Franja del día a la que pertenece una hora (0–23)."""
+    if hour <= 5:
+        return "madrugada"
+    if hour <= 9:
+        return "pico_manana"
+    if hour <= 12:
+        return "valle_manana"
+    if hour <= 15:
+        return "pico_mediodia"
+    if hour <= 17:
+        return "valle_tarde"
+    if hour <= 20:
+        return "pico_tarde"
+    return "noche"
+
+
+def day_type_of(day_of_week: int) -> str:
+    """0=lunes … 4=viernes → 'weekday'; sábado y domingo → 'weekend'."""
+    return "weekend" if day_of_week >= 5 else "weekday"
 
 
 class PredictionLearner:
     """
-    Calcula y aplica correcciones de sesgo a las predicciones de ETA.
+    Aprende el sesgo de las predicciones de ETA a partir de las calificaciones.
 
-    El aprendizaje funciona por franjas:
-        • route_id + stop_id  →  contexto operativo
-        • hour_bucket (0-3)   →  franja del día (madrugada/mañana/tarde/noche)
-        • day_type            →  'weekday' (L-V) o 'weekend' (S-D)
+    Por cada ruta, sentido, parada, franja del día y tipo de día mantiene un
+    promedio móvil del **error total**: lo que tardó la unidad menos la
+    predicción *base* (sin corrección). Medir contra la base es lo que permite
+    que la corrección converja al sesgo real; si se midiera contra la
+    predicción ya corregida, el promedio se quedaría a medio camino.
 
-    Por cada franja mantiene:
-        mean_error  = promedio EMA de (tiempo_real − predicción)
-                      + positivo → el camión llega tarde habitualmente
-                      - negativo → el camión llega antes de lo estimado
-        variance    = varianza EMA del error (mide qué tan impredecible es la ruta)
-        sample_count = cuántas calificaciones hay acumuladas
-
-    Cuando hay ≥ MIN_SAMPLES_TO_APPLY muestras:
-        • get_correction()         → devuelve los minutos a sumar/restar al ETA
-        • get_confidence_adjustment() → sube o baja la confianza según varianza
+    Además lleva las mismas estadísticas para toda la ruta (parada `*`). Una
+    parada con pocas calificaciones se apoya en el promedio de su ruta, y pesa
+    más conforme acumula datos propios.
     """
 
     def __init__(self, store: FeedbackStore):
@@ -49,45 +62,54 @@ class PredictionLearner:
     # ── API pública ────────────────────────────────────────────────────────────
 
     def get_correction(
-        self, route_id: str, stop_id: str, hour: int, day_of_week: int
+        self,
+        route_id: str,
+        stop_id: str,
+        hour: int,
+        day_of_week: int,
+        direction_id: int | None = None,
     ) -> float:
-        """
-        Retorna los minutos a añadir (o restar) a la predicción base.
-        Devuelve 0.0 si no hay datos suficientes.
-        """
-        stats = self._get_stats(route_id, stop_id, hour, day_of_week)
+        """Minutos a sumar (o restar) a la predicción base. 0 si aún no hay datos."""
+        direction = direction_id or 0
+        period, day_type = period_of(hour), day_type_of(day_of_week)
+        route_stats = self._store.get_bias_stats(
+            route_id, direction, ROUTE_LEVEL, period, day_type
+        )
+        prior = 0.0
+        if route_stats and route_stats.sample_count >= MIN_ROUTE_SAMPLES:
+            prior = route_stats.mean_error
+
+        stats = self._store.get_bias_stats(
+            route_id, direction, stop_id, period, day_type
+        )
         if stats is None or stats.sample_count < MIN_SAMPLES_TO_APPLY:
-            return 0.0
-        correction = stats.mean_error
-        # Clampeamos para evitar correcciones extremas
+            correction = prior
+        else:
+            weight = stats.sample_count / (stats.sample_count + WEIGHT_K)
+            correction = weight * stats.mean_error + (1.0 - weight) * prior
         return max(-MAX_CORRECTION_MINUTES, min(MAX_CORRECTION_MINUTES, correction))
 
-    def get_confidence_adjustment(
-        self, route_id: str, stop_id: str, hour: int, day_of_week: int
-    ) -> float:
+    def get_spread(
+        self,
+        route_id: str,
+        stop_id: str,
+        hour: int,
+        day_of_week: int,
+        direction_id: int | None = None,
+    ) -> float | None:
         """
-        Retorna un ajuste de confianza basado en la varianza histórica.
-          +MAX_CONFIDENCE_BOOST → ruta muy predecible en esta franja
-          -MAX_CONFIDENCE_PENALTY → ruta muy impredecible
-          0.0 → sin datos suficientes
+        Desviación estándar (min) del error observado en la franja, o None si
+        aún no hay calificaciones suficientes para confiar en ella.
         """
-        stats = self._get_stats(route_id, stop_id, hour, day_of_week)
-        if stats is None or stats.sample_count < MIN_SAMPLES_TO_APPLY:
-            return 0.0
-
-        std_dev = stats.variance**0.5
-
-        # Umbral de alta confianza: desviación < 3 min con ≥ 15 muestras
-        if std_dev < 3.0 and stats.sample_count >= 15:
-            return MAX_CONFIDENCE_BOOST
-        # Umbral de baja confianza: desviación > 10 min
-        if std_dev > 10.0:
-            return -MAX_CONFIDENCE_PENALTY
-        # Penalización proporcional entre 3 y 10 min de std
-        if std_dev > 3.0:
-            slope = MAX_CONFIDENCE_PENALTY / 7.0  # degradación lineal
-            return -slope * (std_dev - 3.0)
-        return 0.0
+        direction = direction_id or 0
+        period, day_type = period_of(hour), day_type_of(day_of_week)
+        for candidate in (stop_id, ROUTE_LEVEL):
+            stats = self._store.get_bias_stats(
+                route_id, direction, candidate, period, day_type
+            )
+            if stats and stats.sample_count >= MIN_SAMPLES_FOR_SPREAD:
+                return stats.variance**0.5
+        return None
 
     def record_feedback(
         self,
@@ -96,66 +118,82 @@ class PredictionLearner:
         hour: int,
         day_of_week: int,
         error_minutes: float,
+        direction_id: int | None = None,
+        applied_correction: float = 0.0,
     ) -> None:
         """
-        Actualiza el modelo con un nuevo error observado usando EMA.
-        Llamar esto cada vez que llega una calificación con error_minutes conocido.
+        Incorpora una calificación. `error_minutes` es el error contra la
+        predicción mostrada; se le suma la corrección que esa predicción ya
+        traía para obtener el error contra la predicción base.
         """
-        bucket = _hour_bucket(hour)
-        day_type = _day_type(day_of_week)
-        stats = self._store.get_bias_stats(route_id, stop_id, bucket, day_type)
-
-        if stats is None:
-            new_mean = error_minutes
-            new_variance = 0.0
-            new_count = 1
-        else:
-            # EMA del error medio
-            new_mean = EMA_ALPHA * error_minutes + (1.0 - EMA_ALPHA) * stats.mean_error
-            # EMA de la varianza (aproximación de Welford sobre ventana deslizante)
-            new_variance = (1.0 - EMA_ALPHA) * (
-                stats.variance + EMA_ALPHA * (error_minutes - stats.mean_error) ** 2
-            )
-            new_count = stats.sample_count + 1
-
-        self._store.upsert_bias_stats(
-            route_id, stop_id, bucket, day_type, new_mean, new_variance, new_count
-        )
+        direction = direction_id or 0
+        period, day_type = period_of(hour), day_type_of(day_of_week)
+        total_error = error_minutes + applied_correction
+        for target in (stop_id, ROUTE_LEVEL):
+            self._update(route_id, direction, target, period, day_type, total_error)
         logger.debug(
-            "Learner actualizado: route=%s stop=%s bucket=%s day=%s "
-            "error=%.1f nueva_media=%.1f varianza=%.1f n=%d",
+            "Learner: ruta=%s sentido=%s parada=%s franja=%s error_total=%.1f",
             route_id,
+            direction,
             stop_id,
-            bucket,
-            day_type,
-            error_minutes,
-            new_mean,
-            new_variance,
-            new_count,
+            period,
+            total_error,
         )
+
+    def route_summary(
+        self, route_id: str, hour: int, day_of_week: int
+    ) -> tuple[int, float, float]:
+        """
+        (calificaciones, error medio, desviación) de la ruta en la franja
+        actual, sumando ambos sentidos. Lo consume el sistema experto.
+        """
+        period, day_type = period_of(hour), day_type_of(day_of_week)
+        rows = [
+            row
+            for row in self._store.get_route_stats_summary(route_id)
+            if row["stop_id"] == ROUTE_LEVEL
+            and row["period"] == period
+            and row["day_type"] == day_type
+        ]
+        total = sum(int(row["sample_count"]) for row in rows)
+        if total == 0:
+            return 0, 0.0, 0.0
+        mean = sum(row["mean_error"] * row["sample_count"] for row in rows) / total
+        variance = sum(row["variance"] * row["sample_count"] for row in rows) / total
+        return total, mean, variance**0.5
 
     # ── Privado ────────────────────────────────────────────────────────────────
 
-    def _get_stats(self, route_id: str, stop_id: str, hour: int, day_of_week: int):
-        bucket = _hour_bucket(hour)
-        day_type = _day_type(day_of_week)
-        return self._store.get_bias_stats(route_id, stop_id, bucket, day_type)
-
-
-# ── Funciones auxiliares ───────────────────────────────────────────────────────
-
-
-def _hour_bucket(hour: int) -> int:
-    """
-    Divide el día en 4 franjas de 6 horas:
-        0 → 00–05 h  (madrugada)
-        1 → 06–11 h  (mañana)
-        2 → 12–17 h  (tarde)
-        3 → 18–23 h  (noche)
-    """
-    return hour // 6
-
-
-def _day_type(day_of_week: int) -> str:
-    """0=lunes … 4=viernes → 'weekday', 5–6 → 'weekend'."""
-    return "weekend" if day_of_week >= 5 else "weekday"
+    def _update(
+        self,
+        route_id: str,
+        direction_id: int,
+        stop_id: str,
+        period: str,
+        day_type: str,
+        total_error: float,
+    ) -> None:
+        stats = self._store.get_bias_stats(
+            route_id, direction_id, stop_id, period, day_type
+        )
+        if stats is None:
+            mean, variance, count = total_error, 0.0, 1
+        else:
+            deviation = total_error - stats.mean_error
+            mean = stats.mean_error + EMA_ALPHA * deviation
+            # Varianza móvil del error alrededor de la media anterior.
+            variance = (1.0 - EMA_ALPHA) * (stats.variance + EMA_ALPHA * deviation**2)
+            count = stats.sample_count + 1
+        self._store.upsert_bias_stats(
+            BiasStats(
+                route_id=route_id,
+                direction_id=direction_id,
+                stop_id=stop_id,
+                period=period,
+                day_type=day_type,
+                mean_error=mean,
+                variance=variance,
+                sample_count=count,
+                last_updated=datetime.now(timezone.utc).isoformat(),
+            )
+        )

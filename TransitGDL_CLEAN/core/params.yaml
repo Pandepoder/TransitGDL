@@ -1,0 +1,104 @@
+# ─────────────────────────────────────────────────────────────────────────────
+#  Parámetros de cálculo de TransitGDL
+#
+#  Son valores iniciales razonables, no medidos en campo: están aquí, fuera del
+#  código, para poder ajustarlos conforme haya datos reales. El aprendizaje por
+#  calificaciones corrige lo que estos valores no capturen.
+# ─────────────────────────────────────────────────────────────────────────────
+
+clima:
+  # Factor que multiplica el tiempo de recorrido de los modos que comparten
+  # la calle con el tráfico (1.20 = el viaje tarda 20 % más).
+  factor_recorrido:
+    clear: 1.00
+    cloudy: 1.00
+    fog: 1.08
+    rain_ligera: 1.10
+    rain_moderada: 1.20
+    rain_fuerte: 1.35
+    thunderstorm: 1.40
+    snow: 1.50
+    unknown: 1.00
+  # Intensidad de lluvia (mm por hora) a partir de la cual es moderada o fuerte.
+  umbral_lluvia_moderada_mm_h: 2.5
+  umbral_lluvia_fuerte_mm_h: 7.6
+  # Parte del efecto que alcanza a los modos con vía propia.
+  sensibilidad:
+    tren: 0.2
+    brt: 0.6
+    trolebus: 1.0
+    bus: 1.0
+
+incidencias:
+  # Minutos que suma al ETA una incidencia ubicada entre la unidad y la parada.
+  penalizacion_min:
+    low: 1
+    medium: 3
+    high: 8
+    critical: 15
+  # Horas tras las que una incidencia sin resolver deja de considerarse activa.
+  caducidad_horas:
+    low: 1
+    medium: 2
+    high: 4
+    critical: 8
+  # Una incidencia sin ubicación afecta a toda la ruta con esta fracción.
+  fraccion_sin_ubicacion: 0.5
+  # Distancia máxima al trazo para considerar que la incidencia está sobre la ruta.
+  radio_ubicacion_m: 300
+
+eta:
+  # Incertidumbre del ETA en vivo, como fracción del tiempo que falta (1 desviación).
+  sigma_relativa_vivo: 0.12
+  sigma_minima_min: 0.5
+  # Incertidumbre de un horario con hora exacta (minutos, 1 desviación).
+  sigma_horario_min: 1.5
+  # Además, el rango de un horario crece con la anticipación: esta fracción de
+  # la espera se suma a cada lado (5 % de 4 h ≈ ±12 min).
+  rango_horario_fraccion: 0.05
+  # El rango que se reporta cubre ±z desviaciones (1.28 ≈ 80 % de los casos).
+  z_ventana: 1.28
+  # Espera esperada de una unidad detenida en la terminal antes de salir.
+  espera_terminal_s: 60
+  # Una unidad a menos de esta distancia después de la parada aún cuenta como "en la parada".
+  tolerancia_parada_m: 30
+  # Distancia máxima al trazo para asignar a un patrón un GPS sin patrón declarado.
+  radio_vehiculo_m: 150
+  # Rastreo parcial: si la unidad rastreada más próxima tarda más que este
+  # número de frecuencias, se usa la frecuencia (pasa otra que no reporta GPS).
+  frecuencias_max_vivo: 1.5
+  # Media anchura del rango (min) que separa confianza alta, media y baja.
+  rango_confianza_alta_min: 2.5
+  rango_confianza_media_min: 5.0
+
+aprendizaje:
+  # Peso de cada calificación nueva en el promedio móvil.
+  alfa: 0.2
+  # Calificaciones mínimas en una franja antes de usar su corrección.
+  min_muestras: 3
+  # Con n calificaciones, la franja pesa n / (n + peso_k) frente al promedio de la ruta.
+  peso_k: 3
+  # Calificaciones mínimas de toda la ruta para usar su promedio como respaldo.
+  min_muestras_ruta: 5
+  correccion_max_min: 20
+  # Calificaciones mínimas para usar la dispersión observada en el rango del ETA.
+  muestras_para_dispersion: 10
+
+flota:
+  # Descanso en terminal: fracción del tiempo de ciclo, con un mínimo en segundos.
+  descanso_fraccion: 0.10
+  descanso_min_s: 240
+  # La ruta está en su hora pico si su frecuencia es a lo más este múltiplo de la mejor del día.
+  umbral_pico: 1.15
+  # El horario ya está reducido (fin de semana, festivo, noche) si su frecuencia
+  # vigente es al menos este múltiplo de la mejor de un día laboral.
+  umbral_recorte: 1.25
+  # Cobertura (unidades en ruta / necesarias) bajo la cual la flota es insuficiente.
+  cobertura_insuficiente: 0.75
+  cobertura_excedente: 1.30
+
+alternas:
+  # Una ruta es alterna si cubre al menos esta fracción de las paradas de otra,
+  # con una parada propia a menos de `radio_km` de cada una.
+  proporcion_minima: 0.25
+  radio_km: 0.3

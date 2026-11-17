@@ -12,7 +12,9 @@ router = APIRouter(prefix="/demo", tags=["demo"])
 
 def _require_development() -> None:
     if CONFIG.environment.strip().lower() == "production":
-        raise HTTPException(status_code=403, detail="Demo controls are disabled in production.")
+        raise HTTPException(
+            status_code=403, detail="Demo controls are disabled in production."
+        )
 
 
 @router.post("/weather", summary="Simular clima (solo desarrollo)")
@@ -45,18 +47,27 @@ async def clear_demo_weather():
 @router.get("/weather", summary="Clima activo (real o simulado)")
 async def get_demo_weather():
     engine = get_engine()
-    condition = await engine._weather.get_current_condition()
+    weather = engine._weather
+    state = await weather.get_current_state()
+    factor = weather.travel_factor(state, "bus")
     return {
-        "condition": condition.value,
-        "simulated": engine._weather._demo_override is not None,
-        "delay_minutes": engine._weather.get_delay_minutes(condition),
+        "condition": state.condition.value,
+        "label": state.label,
+        "precipitation_mm_h": round(state.precipitation_mm_h, 1),
+        "simulated": weather.is_simulated,
+        "bus_travel_factor": round(factor, 2),
+        "train_travel_factor": round(weather.travel_factor(state, "tren"), 2),
+        # Minutos de más en un recorrido típico de 30 minutos en camión.
+        "delay_minutes": round((factor - 1.0) * 30),
     }
 
 
 @router.post("/inject-vehicle", summary="Inyectar vehículo cerca de una parada")
 async def inject_vehicle(
     route_id: str = Query(..., min_length=1, max_length=32),
-    stop: str | None = Query(None, description="Nombre de parada (ej. Artes Plásticas)"),
+    stop: str | None = Query(
+        None, description="Nombre de parada (ej. Artes Plásticas)"
+    ),
     lat: float | None = Query(None, ge=14, le=23),
     lon: float | None = Query(None, ge=-118, le=-86),
     speed_kmh: float = Query(42.0, ge=5, le=120),
@@ -81,7 +92,7 @@ async def inject_vehicle(
         if eta is not None:
             stop_obj = engine._gtfs.get_stop(eta.stop_id)
             if stop_obj is not None:
-                lat, lon = stop_obj.stop_lat, stop_obj.stop_lon
+                lat, lon = stop_obj.lat, stop_obj.lon
         if lat is None:
             q = stop.strip().lower()
             route_stops = engine._gtfs.get_stops_for_route(route.route_id)
@@ -91,7 +102,7 @@ async def inject_vehicle(
                 pick = matches[0] if matches else None
             if pick is None:
                 raise HTTPException(status_code=404, detail="Stop not found.")
-            lat, lon = pick.stop_lat, pick.stop_lon
+            lat, lon = pick.lat, pick.lon
 
     position = BusPosition(
         vehicle_id=f"DEMO_{route.route_id}",
@@ -126,7 +137,7 @@ async def route_insights(route_id: str):
         "short_name": route.route_short_name,
         "live_vehicles": current,
         "weather": condition.value,
-        "weather_simulated": engine._weather._demo_override is not None,
+        "weather_simulated": engine._weather.is_simulated,
         "demand": snapshot.model_dump(mode="json"),
         "fleet": fleet.model_dump(mode="json"),
     }

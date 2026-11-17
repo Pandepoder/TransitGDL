@@ -17,8 +17,11 @@ Fixtures disponibles:
     demand_analyzer     → DemandAnalyzer con clima despejado
     gtfs_loader         → TransitStore cargado con el GTFS de prueba
     engine              → TransitEngine completo sobre el GTFS de prueba
+    mediodia_laboral    → la hora de "ahora" fija en un martes a las 12:30
 """
 
+import datetime as _dt
+import importlib
 import os
 import sys
 from pathlib import Path
@@ -35,11 +38,26 @@ from core.config import CONFIG  # noqa: E402
 from core.demand_analyzer import DemandAnalyzer  # noqa: E402
 from core.eta_engine import ETAEngine  # noqa: E402
 from core.models import BusPosition, Route, Stop, WeatherCondition  # noqa: E402
+from core.timezone_utils import GDL_TZ  # noqa: E402
 from core.transit import TransitStore  # noqa: E402
 from core.weather_client import WeatherClient  # noqa: E402
 
 # Sin red durante las pruebas: el clima real se sustituye por "despejado".
 CONFIG.use_mock_weather = True
+
+# Un martes laboral, sin festivo, a mediodía: todas las rutas de prueba operan.
+MEDIODIA_LABORAL = _dt.datetime(2026, 11, 17, 12, 30, tzinfo=GDL_TZ)
+
+# Módulos que leen la hora de "ahora" con `datetime.now(...)` para saber qué
+# horario aplica.
+_MODULOS_CON_RELOJ = (
+    "core",
+    "core.demand_analyzer",
+    "core.eta_engine",
+    "core.expert.facts",
+    "core.gtfs_loader",
+    "core.transit.store",
+)
 
 FIXTURE_GTFS = Path("tests/fixtures/gtfs_mini.zip")
 LANDMARKS = Path("data/landmarks.json")
@@ -49,6 +67,29 @@ BRT_ROUTE = "MC-L1"  # Mi Macro Calzada
 BRT_STOP_ID = "MM_003"  # Artes Plásticas, sentido Mirador
 BRT_STOP_NAME = "Artes Plásticas"
 TRAIN_ROUTE = "MT_L3"  # Línea 3 del tren ligero
+
+
+@pytest.fixture
+def mediodia_laboral(monkeypatch):
+    """
+    Fija la hora de "ahora" en un martes laboral a las 12:30 (Guadalajara).
+
+    Es para las pruebas que preguntan por el servicio actual de una ruta: con
+    el reloj real fallarían de madrugada, cuando la ruta no tiene salidas.
+    """
+
+    class _Reloj(_dt.datetime):
+        @classmethod
+        def now(cls, tz=None):
+            if tz is None:
+                return MEDIODIA_LABORAL.replace(tzinfo=None)
+            return MEDIODIA_LABORAL.astimezone(tz)
+
+    for nombre in _MODULOS_CON_RELOJ:
+        modulo = importlib.import_module(nombre)
+        if getattr(modulo, "datetime", None) is _dt.datetime:
+            monkeypatch.setattr(modulo, "datetime", _Reloj)
+    return MEDIODIA_LABORAL
 
 
 # ─────────────────────────────────────────

@@ -554,6 +554,26 @@ def test_hora_pico_propia_de_la_ruta_vale_en_fin_de_semana(experto):
     assert memoria.obtener("hora_pico", True) is not None
 
 
+def test_con_mal_clima_no_se_retiran_unidades(experto):
+    # Festivo a las 23 h con el horario completo y mucha frecuencia: demanda baja.
+    # Con buen clima sobran unidades; con lluvia, tormenta o niebla no se
+    # recortan (R43, R44 y R49 exigen clima despejado o nublado; base 1.3).
+    noche = {
+        "hora": 23,
+        "es_festivo": True,
+        "frecuencia_min": 6,
+        "unidades_necesarias": 20,
+        "unidades_en_servicio": 20,
+    }
+    despejado = experto.diagnosticar(_hechos(**noche))
+    assert despejado.nivel_demanda == "baja"
+    assert "reducir_unidades" in [a.id for a in despejado.acciones]
+    for clima in ("rain", "thunderstorm", "fog"):
+        d = experto.diagnosticar(_hechos(**noche, clima=clima))
+        assert d.decision_flota != "reducir", clima
+        assert "reducir_unidades" not in [a.id for a in d.acciones], clima
+
+
 def test_sin_servicio_no_alerta_ni_mueve_la_flota(experto):
     d = experto.diagnosticar(
         _hechos(

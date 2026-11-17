@@ -1,6 +1,6 @@
 # Barrido del sistema experto
 
-20,000 escenarios aleatorios (semilla 11) sobre la base de conocimiento versión 1.2, generados el 16/11/2026.
+20,000 escenarios aleatorios (semilla 11) sobre la base de conocimiento versión 1.3, generados el 17/11/2026.
 
 ```bash
 python scripts/barrido_experto.py --n 20000 --semilla 11
@@ -10,7 +10,7 @@ python scripts/barrido_experto.py --n 20000 --semilla 11
 
 Cada fila cuenta los diagnósticos que caen en una contradicción de sentido.
 
-| Invariante | Base 1.1 (antes) | Base 1.2 |
+| Invariante | Base 1.1 (antes) | Base 1.3 |
 |---|---|---|
 | Agregar y retirar unidades a la vez | 0 | 0 |
 | Hora pico de la ciudad en fin de semana o festivo | 2,618 | 0 |
@@ -23,7 +23,7 @@ Cada fila cuenta los diagnósticos que caen en una contradicción de sentido.
 Se usan 64 de 64 reglas.
 Las menos usadas: R43 (346), R60 (369), R44 (425), R50 (441), R51 (441).
 
-En promedio cada diagnóstico tarda 1.04 ms y dispara 13.4 reglas.
+En promedio cada diagnóstico tarda 1.11 ms y dispara 13.2 reglas.
 
 ## Diagnósticos
 
@@ -36,9 +36,9 @@ En promedio cada diagnóstico tarda 1.04 ms y dispara 13.4 reglas.
 
 | Decisión de flota | Escenarios |
 |---|---|
-| sin cambio | 46.8 % |
+| sin cambio | 51.2 % |
 | agregar | 41.2 % |
-| reducir | 12.0 % |
+| reducir | 7.6 % |
 
 | Acción recomendada | Escenarios |
 |---|---|
@@ -51,7 +51,7 @@ En promedio cada diagnóstico tarda 1.04 ms y dispara 13.4 reglas.
 | revisar_regularidad | 18.3 % |
 | activar_plan_contingencia | 13.4 % |
 | reforzar_frecuencia | 13.1 % |
-| reducir_unidades | 12.0 % |
+| reducir_unidades | 7.6 % |
 | informar_sin_servicio | 4.9 % |
 | emitir_alerta_operativa | 2.2 % |
 | verificar_gps | 1.8 % |

@@ -35,9 +35,12 @@
 #    está cubierta y el nivel es normal. Lo mismo al revés: si el horario ya
 #    baja el servicio en fin de semana, festivo o de noche, esa baja demanda
 #    está atendida y no se recorta otra vez.
+#  · Con lluvia, tormenta, niebla o nieve no se retiran unidades: las tres
+#    reglas que deciden reducir la flota (R43, R44 y R49) exigen clima
+#    despejado o nublado.
 # ─────────────────────────────────────────────────────────────────────────────
 
-version: "1.2"
+version: "1.3"
 
 hechos_iniciales:
   clima: "Condición climática: clear, cloudy, rain, thunderstorm, fog, snow, unknown"
@@ -585,10 +588,11 @@ reglas:
     si:
       - {hecho: nivel_demanda, valor: baja}
       - {hecho: frecuencia_alta, valor: true}
+      - {hecho: clima, op: en, valor: [clear, cloudy]}
       - {hecho: sin_servicio_programado, op: desconocido}
     entonces:
       - {hecho: decision_flota, valor: reducir}
-    explicacion: Con poca demanda y mucha frecuencia sobran unidades en la ruta.
+    explicacion: Con poca demanda, mucha frecuencia y buen clima sobran unidades en la ruta.
 
   - id: R43
     nombre: Unidades sobrantes fuera de la hora pico de la ruta

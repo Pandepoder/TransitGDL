@@ -103,7 +103,7 @@ def test_bot_has_no_fake_bus_command(engine):
     assert "unidad en vivo" not in eta
 
 
-def test_bot_diagnosis_does_not_invent_a_fleet(engine):
+def test_bot_diagnosis_does_not_invent_a_fleet(engine, mediodia_laboral):
     engine._weather.set_demo_override(WeatherCondition.CLEAR)
     try:
         (reply,) = _chat(engine, "diagnostico 231")
@@ -190,11 +190,13 @@ def test_scenario_day_and_weather_change_the_facts(engine):
         engine.diagnose_route("T15", overrides={"dia": "festivo", "hora": 9})
     )
     despejado = asyncio.run(
-        engine.diagnose_route("T15", overrides={"dia": "laboral", "clima": "clear"})
+        engine.diagnose_route(
+            "T15", overrides={"dia": "laboral", "hora": 9, "clima": "clear"}
+        )
     )
     tormenta = asyncio.run(
         engine.diagnose_route(
-            "T15", overrides={"dia": "laboral", "clima": "thunderstorm"}
+            "T15", overrides={"dia": "laboral", "hora": 9, "clima": "thunderstorm"}
         )
     )
     assert domingo.hechos_iniciales["es_fin_de_semana"] is True

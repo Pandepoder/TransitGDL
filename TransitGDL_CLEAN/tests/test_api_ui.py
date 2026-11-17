@@ -124,7 +124,9 @@ def test_arrivals_by_stop_id_open_that_exact_stop(client):
     assert client.get("/eta/arrivals").status_code == 400
 
 
-def test_fleet_without_a_count_reports_what_the_schedule_needs(client):
+def test_fleet_without_a_count_reports_what_the_schedule_needs(
+    client, mediodia_laboral
+):
     plain = client.get("/fleet/recommend", params={"route_id": "231"}).json()
     assert plain["current_vehicles"] is None
     assert plain["coverage"] is None

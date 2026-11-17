@@ -40,3 +40,5 @@ jobs:
       - name: Build transit database from the official feed
         # Sin red: usa el zip incluido en el repositorio.
         run: python scripts/build_transit_db.py
+      - name: Expert system sweep (no invariant may fail)
+        run: python scripts/barrido_experto.py --n 5000

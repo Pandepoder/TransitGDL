@@ -533,6 +533,62 @@ def test_hora_pico_en_festivo_no_eleva_la_demanda(experto):
     assert "agregar_unidades" not in [a.id for a in d.acciones]
 
 
+def test_hora_pico_de_la_ciudad_solo_en_dia_laboral(experto):
+    # Ruta de frecuencia fija (sin es_hora_pico_ruta) a las 14 h.
+    laboral = experto.inferir(_hechos(hora=14)).memoria
+    assert laboral.obtener("pico_no_cubierto", True) is not None
+    assert laboral.obtener("periodo", "pico_mediodia") is not None
+
+    for dia in ({"es_festivo": True}, {"es_fin_de_semana": True}):
+        memoria = experto.inferir(_hechos(hora=14, **dia)).memoria
+        assert memoria.obtener("hora_pico_general", True) is None, dia
+        assert memoria.obtener("pico_no_cubierto", True) is None, dia
+        assert memoria.obtener("periodo", "valle") is not None, dia
+
+
+def test_hora_pico_propia_de_la_ruta_vale_en_fin_de_semana(experto):
+    # Si el horario de la ruta sube su frecuencia el sábado, eso sí es hora pico.
+    memoria = experto.inferir(
+        _hechos(hora=12, es_fin_de_semana=True, es_hora_pico_ruta=True)
+    ).memoria
+    assert memoria.obtener("hora_pico", True) is not None
+
+
+def test_sin_servicio_no_alerta_ni_mueve_la_flota(experto):
+    d = experto.diagnosticar(
+        _hechos(
+            hora=8,
+            clima="thunderstorm",
+            frecuencia_min=25,
+            unidades_necesarias=10,
+            unidades_en_servicio=20,
+            cobertura_flota=2.0,
+            es_hora_pico_ruta=False,
+            sin_servicio_programado=True,
+        )
+    )
+    ids = {a.id for a in d.acciones}
+    assert "informar_sin_servicio" in ids
+    assert not ids & {
+        "emitir_alerta_operativa",
+        "agregar_unidades",
+        "reducir_unidades",
+        "reforzar_frecuencia",
+    }
+
+
+def test_barrido_sin_violaciones_de_invariantes(experto):
+    from core.expert.escenarios import escenarios, violaciones
+
+    usadas = set()
+    for hechos in escenarios(2000, semilla=5):
+        resultado = experto.inferir(hechos)
+        usadas |= {d.regla.id for d in resultado.disparos}
+        assert violaciones(hechos, resultado) == [], hechos
+    # El barrido corto ya recorre casi toda la base.
+    assert len(usadas) >= 60
+
+
 def test_tormenta_en_hora_pico_es_demanda_critica(experto):
     d = experto.diagnosticar(_hechos(hora=19, clima="thunderstorm"))
     ids = [a.id for a in d.acciones]
